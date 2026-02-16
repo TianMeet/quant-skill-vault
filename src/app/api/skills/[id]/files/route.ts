@@ -9,6 +9,10 @@ type RouteParams = { params: Promise<{ id: string }> }
 const TEXT_MAX = 200 * 1024   // 200KB
 const BINARY_MAX = 2 * 1024 * 1024 // 2MB
 
+function isPrismaCode(err: unknown, code: string): boolean {
+  return !!err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === code
+}
+
 /**
  * GET /api/skills/:id/files
  * - 无 path query: 返回文件列表
@@ -89,16 +93,24 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
   }
 
-  const file = await prisma.skillFile.create({
-    data: {
-      skillId: skill.id,
-      path: filePath,
-      mime: mime || 'application/octet-stream',
-      isBinary: !!isBinary,
-      contentText: isBinary ? null : content,
-      contentBytes: isBinary ? Buffer.from(content, 'base64') : null,
-    },
-  })
+  let file
+  try {
+    file = await prisma.skillFile.create({
+      data: {
+        skillId: skill.id,
+        path: filePath,
+        mime: mime || 'application/octet-stream',
+        isBinary: !!isBinary,
+        contentText: isBinary ? null : content,
+        contentBytes: isBinary ? Buffer.from(content, 'base64') : null,
+      },
+    })
+  } catch (err) {
+    if (isPrismaCode(err, 'P2002')) {
+      return NextResponse.json({ error: 'File path already exists' }, { status: 409 })
+    }
+    throw err
+  }
 
   return NextResponse.json(
     { id: file.id, path: file.path, mime: file.mime, isBinary: file.isBinary, updatedAt: file.updatedAt },
@@ -167,9 +179,16 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   const filePath = url.searchParams.get('path')
   if (!filePath) return NextResponse.json({ error: 'path query required' }, { status: 400 })
 
-  await prisma.skillFile.delete({
-    where: { skillId_path: { skillId: skill.id, path: filePath } },
-  })
+  try {
+    await prisma.skillFile.delete({
+      where: { skillId_path: { skillId: skill.id, path: filePath } },
+    })
+  } catch (err) {
+    if (isPrismaCode(err, 'P2025')) {
+      return NextResponse.json({ error: 'File not found' }, { status: 404 })
+    }
+    throw err
+  }
 
   return NextResponse.json({ ok: true })
 }

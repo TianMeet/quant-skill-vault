@@ -5,6 +5,14 @@ import { slugify } from '@/lib/slugify'
 
 export const runtime = 'nodejs'
 
+function isPrismaCode(err: unknown, code: string): boolean {
+  return !!err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === code
+}
+
+function normalizeTags(tags: string[]): string[] {
+  return [...new Set(tags.map((t) => t.trim()).filter(Boolean))]
+}
+
 /**
  * GET /api/skills - 列表查询，支持 query 和 tags 过滤
  */
@@ -69,8 +77,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Upsert tags
+    const normalizedTags = normalizeTags(parsed.tags)
     const tagRecords = await Promise.all(
-      parsed.tags.map((name) =>
+      normalizedTags.map((name) =>
         prisma.tag.upsert({
           where: { name },
           update: {},
@@ -107,6 +116,9 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     if (err instanceof Error && err.name === 'ZodError') {
       return NextResponse.json({ error: 'Validation failed', details: err }, { status: 400 })
+    }
+    if (isPrismaCode(err, 'P2002')) {
+      return NextResponse.json({ error: 'Slug already exists' }, { status: 409 })
     }
     console.error('POST /api/skills error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

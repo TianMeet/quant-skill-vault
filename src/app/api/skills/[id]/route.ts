@@ -7,6 +7,14 @@ export const runtime = 'nodejs'
 
 type RouteParams = { params: Promise<{ id: string }> }
 
+function isPrismaCode(err: unknown, code: string): boolean {
+  return !!err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === code
+}
+
+function normalizeTags(tags: string[]): string[] {
+  return [...new Set(tags.map((t) => t.trim()).filter(Boolean))]
+}
+
 /**
  * GET /api/skills/:id - 获取单个 Skill
  */
@@ -42,12 +50,19 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     const slug = parsed.title ? slugify(parsed.title) : existing.slug
+    if (parsed.title && !slug) {
+      return NextResponse.json(
+        { error: 'Cannot generate valid slug from title' },
+        { status: 400 }
+      )
+    }
 
     // Handle tags update
     let tagConnect
     if (parsed.tags) {
+      const normalized = normalizeTags(parsed.tags)
       const tagRecords = await Promise.all(
-        parsed.tags.map((name) =>
+        normalized.map((name) =>
           prisma.tag.upsert({
             where: { name },
             update: {},
@@ -86,6 +101,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   } catch (err) {
     if (err instanceof Error && err.name === 'ZodError') {
       return NextResponse.json({ error: 'Validation failed', details: err }, { status: 400 })
+    }
+    if (isPrismaCode(err, 'P2002')) {
+      return NextResponse.json({ error: 'Slug already exists' }, { status: 409 })
     }
     console.error('PUT /api/skills/:id error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
