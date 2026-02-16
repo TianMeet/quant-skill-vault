@@ -15,6 +15,7 @@ import { validateSkillFilePath } from '../skill-files'
 
 const PROMPT_MAX_LENGTH = 8192
 const TEXT_MAX = 200 * 1024 // 200KB
+const BINARY_MAX = 2 * 1024 * 1024 // 2MB
 
 const SYSTEM_PROMPT = `You are a Skill editor for the Quant Skill Vault system.
 You MUST output ONLY a valid JSON object matching the provided json-schema.
@@ -96,9 +97,26 @@ export function validateChangeSet(cs: ChangeSet): { valid: boolean; errors: stri
     }
 
     // Size gate for upsert
-    if (fop.op === 'upsert' && fop.content_text) {
-      if (Buffer.byteLength(fop.content_text, 'utf-8') > TEXT_MAX) {
+    if (fop.op === 'upsert') {
+      const hasText = typeof fop.content_text === 'string'
+      const hasBase64 = typeof fop.content_base64 === 'string'
+
+      if (!hasText && !hasBase64) {
+        errors.push(`fileOp "${fop.path}": upsert requires content_text or content_base64`)
+      }
+      if (hasText && hasBase64) {
+        errors.push(`fileOp "${fop.path}": provide only one of content_text or content_base64`)
+      }
+
+      if (hasText && Buffer.byteLength(fop.content_text!, 'utf-8') > TEXT_MAX) {
         errors.push(`fileOp "${fop.path}": content_text exceeds 200KB limit`)
+      }
+
+      if (hasBase64) {
+        const bytes = Buffer.from(fop.content_base64!, 'base64')
+        if (bytes.length > BINARY_MAX) {
+          errors.push(`fileOp "${fop.path}": content_base64 exceeds 2MB limit`)
+        }
       }
     }
   }

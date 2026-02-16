@@ -7,6 +7,15 @@ import type { ChangeSet } from '@/lib/ai/types'
 export const runtime = 'nodejs'
 
 type RouteParams = { params: Promise<{ id: string }> }
+const BINARY_MAX = 2 * 1024 * 1024 // 2MB
+
+function isPrismaCode(err: unknown, code: string): boolean {
+  return !!err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === code
+}
+
+function normalizeTags(tags: string[]): string[] {
+  return [...new Set(tags.map((t) => t.trim()).filter(Boolean))]
+}
 
 /**
  * POST /api/skills/:id/ai/apply
@@ -48,8 +57,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const updateData: Record<string, unknown> = {}
 
     if (patch.title !== undefined) {
+      const nextSlug = slugify(patch.title)
+      if (!nextSlug) {
+        return NextResponse.json(
+          { error: 'Cannot generate valid slug from title' },
+          { status: 400 }
+        )
+      }
       updateData.title = patch.title
-      updateData.slug = slugify(patch.title)
+      updateData.slug = nextSlug
     }
     if (patch.summary !== undefined) updateData.summary = patch.summary
     if (patch.inputs !== undefined) updateData.inputs = patch.inputs
@@ -66,8 +82,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Handle tags
     if (patch.tags) {
+      const normalized = normalizeTags(patch.tags)
       const tagRecords = await Promise.all(
-        patch.tags.map((name) =>
+        normalized.map((name) =>
           prisma.tag.upsert({
             where: { name },
             update: {},
@@ -81,53 +98,62 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    if (Object.keys(updateData).length > 0) {
-      await prisma.skill.update({
-        where: { id: Number(id) },
-        data: updateData,
-      })
-    }
-
-    // 2) Apply fileOps
-    for (const fop of cs.fileOps) {
-      if (fop.op === 'upsert') {
-        const isBinary = !!fop.content_base64
-        const existing = await prisma.skillFile.findUnique({
-          where: { skillId_path: { skillId: Number(id), path: fop.path } },
+    await prisma.$transaction(async (tx) => {
+      if (Object.keys(updateData).length > 0) {
+        await tx.skill.update({
+          where: { id: Number(id) },
+          data: updateData,
         })
+      }
 
-        if (existing) {
-          await prisma.skillFile.update({
-            where: { skillId_path: { skillId: Number(id), path: fop.path } },
-            data: {
-              mime: fop.mime || existing.mime,
-              isBinary,
-              contentText: isBinary ? null : (fop.content_text || null),
-              contentBytes: isBinary ? Buffer.from(fop.content_base64!, 'base64') : null,
-            },
-          })
-        } else {
-          await prisma.skillFile.create({
-            data: {
-              skillId: Number(id),
-              path: fop.path,
-              mime: fop.mime || 'text/plain',
-              isBinary,
-              contentText: isBinary ? null : (fop.content_text || ''),
-              contentBytes: isBinary ? Buffer.from(fop.content_base64!, 'base64') : null,
-            },
-          })
-        }
-      } else if (fop.op === 'delete') {
-        try {
-          await prisma.skillFile.delete({
+      // 2) Apply fileOps
+      for (const fop of cs.fileOps) {
+        if (fop.op === 'upsert') {
+          const isBinary = !!fop.content_base64
+          const existing = await tx.skillFile.findUnique({
             where: { skillId_path: { skillId: Number(id), path: fop.path } },
           })
-        } catch {
-          // File may not exist, ignore
+
+          if (isBinary) {
+            const bytes = Buffer.from(fop.content_base64!, 'base64')
+            if (bytes.length > BINARY_MAX) {
+              throw Object.assign(new Error('Binary file exceeds 2MB limit'), { code: 'PAYLOAD_TOO_LARGE' })
+            }
+          }
+
+          if (existing) {
+            await tx.skillFile.update({
+              where: { skillId_path: { skillId: Number(id), path: fop.path } },
+              data: {
+                mime: fop.mime || existing.mime,
+                isBinary,
+                contentText: isBinary ? null : (fop.content_text || null),
+                contentBytes: isBinary ? Buffer.from(fop.content_base64!, 'base64') : null,
+              },
+            })
+          } else {
+            await tx.skillFile.create({
+              data: {
+                skillId: Number(id),
+                path: fop.path,
+                mime: fop.mime || 'text/plain',
+                isBinary,
+                contentText: isBinary ? null : (fop.content_text || ''),
+                contentBytes: isBinary ? Buffer.from(fop.content_base64!, 'base64') : null,
+              },
+            })
+          }
+        } else if (fop.op === 'delete') {
+          try {
+            await tx.skillFile.delete({
+              where: { skillId_path: { skillId: Number(id), path: fop.path } },
+            })
+          } catch {
+            // File may not exist, ignore
+          }
         }
       }
-    }
+    })
 
     // 3) Return updated skill
     const updated = await prisma.skill.findUnique({
@@ -142,6 +168,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       },
     })
   } catch (err) {
+    if (isPrismaCode(err, 'P2002')) {
+      return NextResponse.json({ error: 'Slug already exists' }, { status: 409 })
+    }
+    if (isPrismaCode(err, 'PAYLOAD_TOO_LARGE')) {
+      return NextResponse.json({ error: 'Binary file exceeds 2MB limit' }, { status: 413 })
+    }
     console.error('POST /api/skills/:id/ai/apply error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
