@@ -12,6 +12,19 @@ let skillIdCounter = 1
 let tagIdCounter = 1
 let fileIdCounter = 1
 
+function makePrismaError(code: string, message: string) {
+  return Object.assign(new Error(message), { code })
+}
+
+function cloneMap<T extends Record<string, unknown>>(source: Map<number, T>): Map<number, T> {
+  return new Map(Array.from(source.entries()).map(([k, v]) => [k, structuredClone(v)]))
+}
+
+function restoreMap<T extends Record<string, unknown>>(target: Map<number, T>, snapshot: Map<number, T>) {
+  target.clear()
+  for (const [k, v] of snapshot) target.set(k, structuredClone(v))
+}
+
 export function resetMockDb() {
   mockSkills.clear()
   mockTags.clear()
@@ -125,6 +138,11 @@ export const prismaMock = {
     create: vi.fn(async (args: { data: Record<string, unknown>; include?: unknown }) => {
       const id = skillIdCounter++
       const { tags: tagsData, ...rest } = args.data
+      for (const [, existing] of mockSkills) {
+        if (existing.slug === rest.slug) {
+          throw makePrismaError('P2002', 'Unique constraint failed on slug')
+        }
+      }
       const tagNames: string[] = []
       if (tagsData && typeof tagsData === 'object' && 'create' in (tagsData as Record<string, unknown>)) {
         const creates = (tagsData as { create: Array<{ tagId: number }> }).create
@@ -153,6 +171,13 @@ export const prismaMock = {
       const skill = mockSkills.get(args.where.id)
       if (!skill) throw new Error('Not found')
       const { tags: tagsData, ...rest } = args.data
+      if (rest.slug) {
+        for (const [sid, existing] of mockSkills) {
+          if (sid !== args.where.id && existing.slug === rest.slug) {
+            throw makePrismaError('P2002', 'Unique constraint failed on slug')
+          }
+        }
+      }
       const updated = { ...skill, ...rest, updatedAt: new Date() }
       if (tagsData && typeof tagsData === 'object' && 'create' in (tagsData as Record<string, unknown>)) {
         const creates = (tagsData as { create: Array<{ tagId: number }> }).create
@@ -210,6 +235,11 @@ export const prismaMock = {
     }),
 
     create: vi.fn(async (args: { data: Record<string, unknown> }) => {
+      for (const [, existing] of mockFiles) {
+        if (existing.skillId === args.data.skillId && existing.path === args.data.path) {
+          throw makePrismaError('P2002', 'Unique constraint failed on skillId_path')
+        }
+      }
       const id = fileIdCounter++
       const file = { id, createdAt: new Date(), updatedAt: new Date(), ...args.data }
       mockFiles.set(id, file)
@@ -234,9 +264,28 @@ export const prismaMock = {
           return f
         }
       }
-      throw new Error('Not found')
+      throw makePrismaError('P2025', 'Record to delete does not exist')
     }),
   },
+
+  $transaction: vi.fn(async (fn: (tx: typeof prismaMock) => Promise<unknown>) => {
+    const skillSnap = cloneMap(mockSkills)
+    const tagSnap = cloneMap(mockTags)
+    const fileSnap = cloneMap(mockFiles)
+    const counters = { skillIdCounter, tagIdCounter, fileIdCounter }
+
+    try {
+      return await fn(prismaMock as unknown as typeof prismaMock)
+    } catch (err) {
+      restoreMap(mockSkills, skillSnap)
+      restoreMap(mockTags, tagSnap)
+      restoreMap(mockFiles, fileSnap)
+      skillIdCounter = counters.skillIdCounter
+      tagIdCounter = counters.tagIdCounter
+      fileIdCounter = counters.fileIdCounter
+      throw err
+    }
+  }),
 }
 
 // Mock the prisma module

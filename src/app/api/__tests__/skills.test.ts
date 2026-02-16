@@ -74,6 +74,23 @@ describe('Skills API', () => {
       await createSkill(req)
       expect(prismaMock.tag.upsert).toHaveBeenCalledTimes(2)
     })
+
+    it('returns 409 when slug conflicts', async () => {
+      const firstReq = makeRequest('http://localhost:3000/api/skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(validSkillBody),
+      })
+      await createSkill(firstReq)
+
+      const secondReq = makeRequest('http://localhost:3000/api/skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...validSkillBody, tags: ['Another'] }),
+      })
+      const res = await createSkill(secondReq)
+      expect(res.status).toBe(409)
+    })
   })
 
   describe('GET /api/skills', () => {
@@ -158,6 +175,50 @@ describe('Skills API', () => {
       expect(res.status).toBe(200)
       const data = await res.json()
       expect(data.title).toBe('Updated Skill')
+    })
+
+    it('returns 400 when title cannot generate a valid slug', async () => {
+      const createReq = makeRequest('http://localhost:3000/api/skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(validSkillBody),
+      })
+      const createRes = await createSkill(createReq)
+      const created = await createRes.json()
+
+      const updateReq = makeRequest(`http://localhost:3000/api/skills/${created.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: '量化技能库' }),
+      })
+      const res = await updateSkill(updateReq, { params: Promise.resolve({ id: String(created.id) }) })
+      expect(res.status).toBe(400)
+    })
+
+    it('returns 409 when updated title conflicts on slug', async () => {
+      const firstReq = makeRequest('http://localhost:3000/api/skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(validSkillBody),
+      })
+      const firstRes = await createSkill(firstReq)
+      const first = await firstRes.json()
+
+      const secondReq = makeRequest('http://localhost:3000/api/skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...validSkillBody, title: 'Another Skill', tags: ['Extra'] }),
+      })
+      const secondRes = await createSkill(secondReq)
+      const second = await secondRes.json()
+
+      const updateReq = makeRequest(`http://localhost:3000/api/skills/${second.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: first.title }),
+      })
+      const res = await updateSkill(updateReq, { params: Promise.resolve({ id: String(second.id) }) })
+      expect(res.status).toBe(409)
     })
   })
 

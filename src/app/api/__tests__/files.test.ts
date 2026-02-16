@@ -220,6 +220,14 @@ describe('Files API', () => {
       const data = await listRes.json()
       expect(data.length).toBe(0)
     })
+
+    it('returns 404 when deleting a non-existent file', async () => {
+      const skill = seedMockSkill(validSkillData)
+      const { DELETE: DEL } = await import('../skills/[id]/files/route')
+      const delReq = new Request('http://localhost/api/skills/1/files?path=references/missing.md', { method: 'DELETE' })
+      const res = await DEL(delReq, { params: Promise.resolve({ id: String(skill.id) }) })
+      expect(res.status).toBe(404)
+    })
   })
 })
 

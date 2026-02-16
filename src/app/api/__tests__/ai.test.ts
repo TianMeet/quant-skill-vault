@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import './prisma-mock'
-import { resetMockDb, seedMockSkill, getMockSkills, getMockFiles } from './prisma-mock'
+import { resetMockDb, seedMockSkill, getMockSkills, getMockFiles, prismaMock } from './prisma-mock'
 
 import { POST as propose } from '@/app/api/skills/[id]/ai/propose/route'
 import { POST as apply } from '@/app/api/skills/[id]/ai/apply/route'
@@ -200,6 +200,68 @@ describe('AI API', () => {
       // Verify file was deleted
       files = Array.from(getMockFiles().values())
       expect(files.find((f) => f.path === 'references/temp.md')).toBeUndefined()
+    })
+
+    it('should reject binary fileOps larger than 2MB', async () => {
+      const skill = seedMockSkill(validSkillData)
+      const oversizedBase64 = Buffer.alloc(2 * 1024 * 1024 + 1).toString('base64')
+      const changeSet = {
+        skillPatch: {},
+        fileOps: [
+          { op: 'upsert', path: 'assets/big.bin', content_base64: oversizedBase64 },
+        ],
+      }
+
+      const req = makeRequest(
+        `http://localhost:3000/api/skills/${skill.id}/ai/apply`,
+        { changeSet }
+      )
+      const res = await apply(req, { params: Promise.resolve({ id: String(skill.id) }) })
+      expect(res.status).toBe(400)
+    })
+
+    it('should reject title patch when slug cannot be generated', async () => {
+      const skill = seedMockSkill(validSkillData)
+      const changeSet = {
+        skillPatch: { title: '量化技能库' },
+        fileOps: [],
+      }
+
+      const req = makeRequest(
+        `http://localhost:3000/api/skills/${skill.id}/ai/apply`,
+        { changeSet }
+      )
+      const res = await apply(req, { params: Promise.resolve({ id: String(skill.id) }) })
+      expect(res.status).toBe(400)
+    })
+
+    it('rolls back skill changes when file operation fails', async () => {
+      const skill = seedMockSkill(validSkillData)
+      const originalSummary = getMockSkills().get(skill.id as number)?.summary
+
+      const createSpy = vi.spyOn(prismaMock.skillFile, 'create')
+      createSpy.mockImplementationOnce(async () => {
+        throw new Error('Simulated file write failure')
+      })
+
+      const req = makeRequest(
+        `http://localhost:3000/api/skills/${skill.id}/ai/apply`,
+        {
+          changeSet: {
+            skillPatch: { summary: 'should rollback' },
+            fileOps: [
+              { op: 'upsert', path: 'references/rules.md', content_text: 'x' },
+            ],
+          },
+        }
+      )
+
+      const res = await apply(req, { params: Promise.resolve({ id: String(skill.id) }) })
+      expect(res.status).toBe(500)
+
+      const current = getMockSkills().get(skill.id as number)
+      expect(current?.summary).toBe(originalSummary)
+      createSpy.mockRestore()
     })
   })
 })

@@ -157,6 +157,36 @@ describe('validateChangeSet', () => {
     expect(result.errors.some((e) => e.includes('200KB'))).toBe(true)
   })
 
+  it('should reject content_base64 exceeding 2MB', () => {
+    const cs: ChangeSet = {
+      skillPatch: {},
+      fileOps: [{ op: 'upsert', path: 'assets/big.bin', content_base64: Buffer.alloc(2 * 1024 * 1024 + 1).toString('base64') }],
+    }
+    const result = validateChangeSet(cs)
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.includes('2MB'))).toBe(true)
+  })
+
+  it('should reject upsert without content', () => {
+    const cs: ChangeSet = {
+      skillPatch: {},
+      fileOps: [{ op: 'upsert', path: 'references/empty.md' }],
+    }
+    const result = validateChangeSet(cs)
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.includes('requires content_text or content_base64'))).toBe(true)
+  })
+
+  it('should reject upsert with both content_text and content_base64', () => {
+    const cs: ChangeSet = {
+      skillPatch: {},
+      fileOps: [{ op: 'upsert', path: 'references/conflict.md', content_text: 'x', content_base64: Buffer.from('x').toString('base64') }],
+    }
+    const result = validateChangeSet(cs)
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.includes('only one of content_text or content_base64'))).toBe(true)
+  })
+
   it('should allow delete op without content', () => {
     const cs: ChangeSet = {
       skillPatch: {},
