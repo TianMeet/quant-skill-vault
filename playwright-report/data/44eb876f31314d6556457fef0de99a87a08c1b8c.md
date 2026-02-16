@@ -1,0 +1,102 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "Quant Skill Vault" [ref=e4] [cursor=pointer]:
+        - /url: /skills
+      - navigation [ref=e5]:
+        - link "Skills" [ref=e6] [cursor=pointer]:
+          - /url: /skills
+        - link "New Skill" [ref=e7] [cursor=pointer]:
+          - /url: /skills/new
+  - main [ref=e8]:
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - generic [ref=e11]:
+          - heading "E2E Test Skill" [level=1] [ref=e12]
+          - paragraph [ref=e13]: e2e-test-skill
+          - generic [ref=e15]: E2E
+        - generic [ref=e16]:
+          - link "Edit" [ref=e17] [cursor=pointer]:
+            - /url: /skills/23/edit
+            - img [ref=e18]
+            - text: Edit
+          - button "Delete" [ref=e21]:
+            - img [ref=e22]
+            - text: Delete
+      - generic [ref=e25]:
+        - generic [ref=e26]:
+          - heading "Purpose" [level=2] [ref=e27]
+          - paragraph [ref=e28]: processes test data for e2e validation
+        - generic [ref=e29]:
+          - heading "Inputs" [level=2] [ref=e30]
+          - paragraph [ref=e31]: Test input data
+        - generic [ref=e32]:
+          - heading "Outputs" [level=2] [ref=e33]
+          - paragraph [ref=e34]: Validated output
+        - generic [ref=e35]:
+          - heading "Workflow" [level=2] [ref=e36]
+          - list [ref=e37]:
+            - listitem [ref=e38]: Load test data
+            - listitem [ref=e39]: Validate structure
+            - listitem [ref=e40]: Output results
+        - generic [ref=e41]:
+          - heading "Risks" [level=2] [ref=e42]
+          - paragraph [ref=e43]: Test data may be incomplete
+        - generic [ref=e44]:
+          - heading "Triggers" [level=2] [ref=e45]
+          - generic [ref=e46]:
+            - generic [ref=e47]: "\"run e2e test\""
+            - generic [ref=e48]: "\"validate test data\""
+            - generic [ref=e49]: "\"process test suite\""
+        - generic [ref=e50]:
+          - heading "Guardrails" [level=2] [ref=e51]
+          - generic [ref=e52]:
+            - paragraph [ref=e53]: "Escalation: ASK_HUMAN"
+            - paragraph [ref=e54]: "User Invocable: Yes"
+            - paragraph [ref=e55]: "Disable Model Invocation: No"
+            - generic [ref=e56]:
+              - text: "Stop Conditions:"
+              - list [ref=e57]:
+                - listitem [ref=e58]: Stop if no test data provided
+        - generic [ref=e59]:
+          - heading "Tests" [level=2] [ref=e60]
+          - generic [ref=e62]:
+            - paragraph [ref=e63]: basic validation
+            - paragraph [ref=e64]:
+              - text: "Input:"
+              - code [ref=e65]: sample input
+            - paragraph [ref=e66]:
+              - text: "Expected:"
+              - code [ref=e67]: validated output
+        - generic [ref=e68]:
+          - heading "Export" [level=2] [ref=e69]
+          - button "Run Lint Check" [ref=e70]
+          - generic [ref=e71]:
+            - paragraph [ref=e73]:
+              - img [ref=e74]
+              - text: Lint Passed
+            - generic [ref=e77]:
+              - button "Export ZIP" [active] [ref=e78]:
+                - img [ref=e79]
+                - text: Export ZIP
+              - link "Export MD" [ref=e82] [cursor=pointer]:
+                - /url: /api/skills/23/export.md
+              - link "Export JSON" [ref=e83] [cursor=pointer]:
+                - /url: /api/skills/23/export.json
+      - generic [ref=e84]: "Created: 2/16/2026, 11:48:35 AM | Updated: 2/16/2026, 11:48:35 AM"
+  - generic [ref=e89] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=e90]:
+      - img [ref=e91]
+    - generic [ref=e94]:
+      - button "Open issues overlay" [ref=e95]:
+        - generic [ref=e96]:
+          - generic [ref=e97]: "0"
+          - generic [ref=e98]: "1"
+        - generic [ref=e99]: Issue
+      - button "Collapse issues badge" [ref=e100]:
+        - img [ref=e101]
+  - alert [ref=e103]
+```

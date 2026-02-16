@@ -1,36 +1,197 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Quant Skill Vault
 
-## Getting Started
+量化技能库 — 管理和导出 Claude Code Skills 合规技能包。
 
-First, run the development server:
+## 技术栈
+
+- Next.js 16 (App Router) + TypeScript
+- TailwindCSS + shadcn/ui
+- Prisma 5 + MySQL
+- Zod 校验
+- archiver (ZIP 导出)
+- js-yaml (YAML frontmatter)
+- Vitest (单元/API 测试) + Playwright (E2E)
+
+## 快速开始
+
+### 1. 安装依赖
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. 启动 MySQL
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+pnpm db:up
+# 等待 MySQL 就绪 (~10s)
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 3. 数据库迁移 & Seed
 
-## Learn More
+```bash
+pnpm db:push
+pnpm db:seed
+```
 
-To learn more about Next.js, take a look at the following resources:
+### 4. 启动开发服务器
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+pnpm dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+访问 http://localhost:3000
 
-## Deploy on Vercel
+## 测试
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 运行全部测试（单元 + API）
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+pnpm test
+```
+
+### 分类运行
+
+```bash
+pnpm test:unit    # 纯函数层：slugify, lint, markdown
+pnpm test:api     # API Route Handler 测试
+pnpm test:e2e     # Playwright E2E（需要先启动 dev server + MySQL）
+```
+
+### E2E 测试
+
+```bash
+# 确保 MySQL 已启动且数据库已迁移
+pnpm db:up && pnpm db:push
+
+# 安装 Playwright 浏览器
+npx playwright install chromium
+
+# 运行 E2E
+pnpm test:e2e
+```
+
+## 导出验证
+
+### 通过 API 验证导出 ZIP
+
+```bash
+# 假设 skill id = 1
+curl -o skill.zip http://localhost:3000/api/skills/1/export.zip
+unzip -l skill.zip
+# 应包含: <slug>/SKILL.md
+
+unzip -p skill.zip "*/SKILL.md" | head -20
+# 应包含 YAML frontmatter: name, description (以 "This skill should be used when" 开头)
+```
+
+### 通过 API 验证 Markdown 导出
+
+```bash
+curl http://localhost:3000/api/skills/1/export.md
+```
+
+### 通过 API 验证 JSON 导出
+
+```bash
+curl http://localhost:3000/api/skills/1/export.json | jq .
+```
+
+### Lint 不通过时的行为
+
+导出接口会返回 400 + errors 数组：
+
+```bash
+# 创建一个不合规的 skill 后尝试导出
+curl -v http://localhost:3000/api/skills/<id>/export.zip
+# 返回 400 + { error: "Lint failed", errors: [...] }
+```
+
+## AI Tab（Claude CLI 集成）
+
+编辑页新增 AI Tab，可调用本机 Claude CLI 生成/修改 Skill 内容和 supporting files。
+
+### 前置条件
+
+1. 安装 Claude Code CLI 并验证：
+```bash
+claude -v
+```
+
+2. 在 `.env` 中配置（可选，均有默认值）：
+```
+CLAUDE_BIN=claude          # Claude 可执行文件路径
+CLAUDE_MODEL=sonnet        # 模型选择
+CLAUDE_MAX_TURNS=3         # 最大轮次
+CLAUDE_MAX_BUDGET_USD=1    # 单次预算上限
+CLAUDE_TIMEOUT_MS=60000    # 超时时间
+```
+
+### 使用方式
+
+1. 进入 Skill 编辑页，切换到 AI Tab
+2. 可选填写 instruction（自然语言指令）
+3. 点击按钮：
+   - **Improve** — 优化 Skill 内容
+   - **Fix Lint** — 自动修复 lint 错误
+   - **Generate Supporting Files** — 生成参考文件
+4. 预览变更（字段 patch + 文件列表 + lint 状态）
+5. 点击 Apply 写入数据库
+
+### 安全策略
+
+- Claude 以 headless print 模式运行，禁用所有内置工具（`--tools ""`）
+- 使用 `spawn(command, args, {shell:false})` 防止命令注入
+- Path Gate：fileOps 仅允许 `references/`、`examples/`、`scripts/`、`assets/`、`templates/` 目录
+- 禁止修改 SKILL.md（由系统自动生成）
+- Prompt 长度限制 8KB，单文件 200KB
+
+## 项目结构
+
+```
+src/
+├── app/
+│   ├── api/
+│   │   ├── skills/          # CRUD + 导出
+│   │   ├── tags/            # 标签管理
+│   │   └── lint/            # 客户端 lint 校验
+│   └── skills/              # 页面路由
+│       ├── page.tsx         # 列表页
+│       ├── new/page.tsx     # 新建页
+│       └── [id]/
+│           ├── page.tsx     # 详情页
+│           └── edit/page.tsx # 编辑页
+├── components/              # UI 组件
+├── lib/
+│   ├── slugify.ts           # Slug 生成
+│   ├── lint.ts              # Lint Gate 校验
+│   ├── markdown.ts          # SKILL.md 渲染
+│   ├── prisma.ts            # Prisma 客户端
+│   ├── types.ts             # 类型定义
+│   └── zod-schemas.ts       # Zod 校验 schema
+e2e/                         # Playwright E2E 测试
+prisma/
+├── schema.prisma            # 数据模型
+└── seed.ts                  # 种子数据
+```
+
+## 环境变量
+
+复制 `.env.example` 为 `.env` 并按需修改：
+
+```bash
+cp .env.example .env
+```
+
+## Scripts
+
+| 命令 | 说明 |
+|------|------|
+| `pnpm dev` | 启动开发服务器 |
+| `pnpm db:up` | 启动 MySQL (Docker) |
+| `pnpm db:push` | 推送 schema 到数据库 |
+| `pnpm db:seed` | 填充示例数据 |
+| `pnpm test` | 运行全部测试 |
+| `pnpm test:unit` | 运行单元测试 |
+| `pnpm test:api` | 运行 API 测试 |
+| `pnpm test:e2e` | 运行 E2E 测试 |

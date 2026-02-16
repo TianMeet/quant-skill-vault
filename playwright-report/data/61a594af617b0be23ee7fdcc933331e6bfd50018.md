@@ -1,0 +1,52 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "Quant Skill Vault" [ref=e4] [cursor=pointer]:
+        - /url: /skills
+      - navigation [ref=e5]:
+        - link "Skills" [ref=e6] [cursor=pointer]:
+          - /url: /skills
+        - link "New Skill" [ref=e7] [cursor=pointer]:
+          - /url: /skills/new
+  - main [ref=e8]:
+    - generic [ref=e9]:
+      - heading "Edit Skill" [level=1] [ref=e10]
+      - generic [ref=e11]:
+        - button "Author" [ref=e12]
+        - button "Triggers" [ref=e13]
+        - button "Guardrails" [ref=e14]
+        - button "Tests" [ref=e15]
+        - button "Files" [ref=e16]
+        - button "Export" [ref=e17]
+      - generic [ref=e18]:
+        - generic [ref=e19]:
+          - generic [ref=e20]:
+            - generic [ref=e21]: Directory
+            - combobox [ref=e22]:
+              - option "references/" [selected]
+              - option "examples/"
+              - option "scripts/"
+              - option "assets/"
+              - option "templates/"
+          - generic [ref=e23]:
+            - generic [ref=e24]: Filename
+            - textbox "e.g. rules.md" [ref=e25]: rules.md
+          - button "Create" [ref=e26]:
+            - img [ref=e27]
+            - text: Create
+          - generic [ref=e28] [cursor=pointer]:
+            - img [ref=e29]
+            - text: Upload
+        - generic [ref=e32]:
+          - paragraph [ref=e34]: No files yet
+          - paragraph [ref=e36]: Select a file to edit
+      - generic [ref=e37]:
+        - button "Update Skill" [ref=e38]
+        - button "Cancel" [ref=e39]
+  - button "Open Next.js Dev Tools" [ref=e45] [cursor=pointer]:
+    - img [ref=e46]
+  - alert [ref=e49]
+```
