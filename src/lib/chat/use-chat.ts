@@ -153,8 +153,19 @@ export function useChat(options?: UseChatOptions) {
     })
 
     if (!res.ok) {
-      const err = await res.json()
-      throw new Error(err.error || 'Failed to create skill')
+      const err = await res.json().catch(() => ({}))
+      const details =
+        err && typeof err === 'object' && 'details' in err && Array.isArray((err as { details?: unknown }).details)
+          ? (err as { details: Array<{ message?: string }> }).details
+              .map((d) => (d && typeof d.message === 'string' ? d.message : ''))
+              .filter(Boolean)
+              .slice(0, 2)
+              .join('; ')
+          : ''
+      const base = (err && typeof err === 'object' && 'error' in err && typeof (err as { error?: unknown }).error === 'string')
+        ? (err as { error: string }).error
+        : 'Failed to create skill'
+      throw new Error(details ? `${base}: ${details}` : base)
     }
 
     const skill = await res.json()

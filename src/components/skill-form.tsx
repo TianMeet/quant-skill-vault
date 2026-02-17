@@ -278,7 +278,11 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       })
       const data = await res.json()
       if (!res.ok) {
-        setAiError(toUserFriendlyErrorMessage(data.error || `AI 建议失败（${res.status}）`))
+        const baseError = toUserFriendlyErrorMessage(data.error || `AI 建议失败（${res.status}）`)
+        const details = Array.isArray(data.details)
+          ? data.details.filter((d: unknown): d is string => typeof d === 'string' && d.trim().length > 0)
+          : []
+        setAiError(details.length > 0 ? `${baseError}（${details.slice(0, 2).join('；')}）` : baseError)
         return
       }
       setAiChangeSet(data.changeSet)
@@ -302,7 +306,11 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       })
       const data = await res.json()
       if (!res.ok) {
-        setAiError(toUserFriendlyErrorMessage(data.error || `AI 应用失败（${res.status}）`))
+        const baseError = toUserFriendlyErrorMessage(data.error || `AI 应用失败（${res.status}）`)
+        const details = Array.isArray(data.errors)
+          ? data.errors.filter((d: unknown): d is string => typeof d === 'string' && d.trim().length > 0)
+          : []
+        setAiError(details.length > 0 ? `${baseError}（${details.slice(0, 2).join('；')}）` : baseError)
         return
       }
       setAiApplied(true)

@@ -2,9 +2,10 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, ChevronDown, ChevronUp, ExternalLink, Loader2 } from 'lucide-react'
+import { AlertCircle, Check, ChevronDown, ChevronUp, ExternalLink, Loader2 } from 'lucide-react'
 import type { ToolCallData } from '@/lib/chat/types'
 import { Button } from '@/components/ui/button'
+import { toUserFriendlyErrorMessage } from '@/lib/friendly-validation'
 
 interface Props {
   toolCall: ToolCallData
@@ -16,18 +17,21 @@ interface Props {
 export function ChatSkillPreview({ toolCall, onConfirm, onEdit, created }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState('')
   const router = useRouter()
   const skill = toolCall.input
 
   const handleCreate = async () => {
+    setCreateError('')
     setCreating(true)
     try {
       const result = await onConfirm()
       if (result?.id) {
         router.push(`/skills/${result.id}`)
       }
-    } catch {
-      // error handled in hook
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : 'Failed to create skill'
+      setCreateError(toUserFriendlyErrorMessage(raw))
     } finally {
       setCreating(false)
     }
@@ -138,6 +142,21 @@ export function ChatSkillPreview({ toolCall, onConfirm, onEdit, created }: Props
       )}
 
       {/* Actions */}
+      {createError && (
+        <div
+          className="mx-4 mb-2 rounded-lg border px-3 py-2 text-xs"
+          style={{
+            borderColor: 'color-mix(in srgb, var(--danger) 40%, var(--border))',
+            background: 'var(--danger-light)',
+            color: 'var(--danger)',
+          }}
+        >
+          <p className="flex items-center gap-1.5">
+            <AlertCircle className="h-3.5 w-3.5" />
+            {createError}
+          </p>
+        </div>
+      )}
       {!created?.success && (
         <div className="px-4 py-3 border-t flex gap-2" style={{ borderColor: 'var(--border)' }}>
           <Button

@@ -13,6 +13,12 @@ function isPrismaCode(err: unknown, code: string): boolean {
   return !!err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === code
 }
 
+function parseSkillId(rawId: string): number | null {
+  const skillId = Number(rawId)
+  if (!Number.isInteger(skillId) || skillId <= 0) return null
+  return skillId
+}
+
 /**
  * GET /api/skills/:id/files
  * - 无 path query: 返回文件列表
@@ -20,7 +26,9 @@ function isPrismaCode(err: unknown, code: string): boolean {
  */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   const { id } = await params
-  const skill = await prisma.skill.findUnique({ where: { id: Number(id) } })
+  const skillId = parseSkillId(id)
+  if (!skillId) return NextResponse.json({ error: 'Invalid skill id' }, { status: 400 })
+  const skill = await prisma.skill.findUnique({ where: { id: skillId } })
   if (!skill) return NextResponse.json({ error: 'Skill not found' }, { status: 404 })
 
   const url = new URL(request.url)
@@ -64,15 +72,28 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
  */
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const { id } = await params
-  const skill = await prisma.skill.findUnique({ where: { id: Number(id) } })
+  const skillId = parseSkillId(id)
+  if (!skillId) return NextResponse.json({ error: 'Invalid skill id' }, { status: 400 })
+  const skill = await prisma.skill.findUnique({ where: { id: skillId } })
   if (!skill) return NextResponse.json({ error: 'Skill not found' }, { status: 404 })
 
-  const body = await request.json()
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
   const { path: filePath, content, mime, isBinary } = body as {
     path: string
     content: string
     mime: string
     isBinary: boolean
+  }
+  if (!filePath || typeof filePath !== 'string') {
+    return NextResponse.json({ error: 'path is required' }, { status: 400 })
+  }
+  if (typeof content !== 'string') {
+    return NextResponse.json({ error: 'content must be string' }, { status: 400 })
   }
 
   // 路径校验
@@ -123,15 +144,25 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
  */
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   const { id } = await params
-  const skill = await prisma.skill.findUnique({ where: { id: Number(id) } })
+  const skillId = parseSkillId(id)
+  if (!skillId) return NextResponse.json({ error: 'Invalid skill id' }, { status: 400 })
+  const skill = await prisma.skill.findUnique({ where: { id: skillId } })
   if (!skill) return NextResponse.json({ error: 'Skill not found' }, { status: 404 })
 
   const url = new URL(request.url)
   const filePath = url.searchParams.get('path')
   if (!filePath) return NextResponse.json({ error: 'path query required' }, { status: 400 })
 
-  const body = await request.json()
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
   const { content } = body as { content: string }
+  if (typeof content !== 'string') {
+    return NextResponse.json({ error: 'content must be string' }, { status: 400 })
+  }
 
   const existing = await prisma.skillFile.findUnique({
     where: { skillId_path: { skillId: skill.id, path: filePath } },
@@ -172,7 +203,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
  */
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   const { id } = await params
-  const skill = await prisma.skill.findUnique({ where: { id: Number(id) } })
+  const skillId = parseSkillId(id)
+  if (!skillId) return NextResponse.json({ error: 'Invalid skill id' }, { status: 400 })
+  const skill = await prisma.skill.findUnique({ where: { id: skillId } })
   if (!skill) return NextResponse.json({ error: 'Skill not found' }, { status: 404 })
 
   const url = new URL(request.url)

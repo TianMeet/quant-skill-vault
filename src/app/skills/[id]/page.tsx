@@ -7,7 +7,7 @@ import { Download, Edit, Trash2, AlertCircle, CheckCircle, File, ChevronLeft, Sh
 import type { SkillGuardrails, SkillTestCase } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { toFriendlyLintIssues } from '@/lib/friendly-validation'
+import { toFriendlyLintIssues, toUserFriendlyErrorMessage } from '@/lib/friendly-validation'
 
 interface SkillDetail {
   id: number
@@ -45,6 +45,8 @@ export default function SkillDetailPage() {
   const skillId = Array.isArray(params.id) ? params.id[0] : params.id
   const [skill, setSkill] = useState<SkillDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [actionError, setActionError] = useState('')
   const [lintErrors, setLintErrors] = useState<LintError[]>([])
   const [lintPassed, setLintPassed] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -54,21 +56,35 @@ export default function SkillDetailPage() {
   const fetchSkill = useCallback(async () => {
     if (!skillId) return
     setLoading(true)
-    const res = await fetch(`/api/skills/${skillId}`)
-    if (res.ok) {
-      setSkill(await res.json())
+    setLoadError('')
+    try {
+      const res = await fetch(`/api/skills/${skillId}`)
+      if (res.ok) {
+        setSkill(await res.json())
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setSkill(null)
+        setLoadError(toUserFriendlyErrorMessage(data.error || `加载失败（${res.status}）`))
+      }
+    } catch {
+      setSkill(null)
+      setLoadError('加载 Skill 失败，请稍后重试。')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [skillId])
 
   const fetchFiles = useCallback(async () => {
     if (!skillId) return
-    const res = await fetch(`/api/skills/${skillId}/files`)
-    if (res.ok) setFiles(await res.json())
+    try {
+      const res = await fetch(`/api/skills/${skillId}/files`)
+      if (res.ok) setFiles(await res.json())
+    } catch {
+      setFiles([])
+    }
   }, [skillId])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchSkill()
     void fetchFiles()
   }, [fetchSkill, fetchFiles])
@@ -76,9 +92,21 @@ export default function SkillDetailPage() {
   async function handleDelete() {
     if (!skillId) return
     if (!confirm('确定删除该 Skill？')) return
+    setActionError('')
     setDeleting(true)
-    await fetch(`/api/skills/${skillId}`, { method: 'DELETE' })
-    router.push('/skills')
+    try {
+      const res = await fetch(`/api/skills/${skillId}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setActionError(toUserFriendlyErrorMessage(data.error || `删除失败（${res.status}）`))
+        return
+      }
+      router.push('/skills')
+    } catch {
+      setActionError('删除时网络异常，请重试。')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   async function handleLint() {
@@ -122,7 +150,7 @@ export default function SkillDetailPage() {
   if (!skill) {
     return (
       <div className="mx-auto max-w-4xl px-6 py-8">
-        <p className="text-sm" style={{ color: 'var(--danger)' }}>Skill 未找到</p>
+        <p className="text-sm" style={{ color: 'var(--danger)' }}>{loadError || 'Skill 未找到'}</p>
       </div>
     )
   }
@@ -174,6 +202,22 @@ export default function SkillDetailPage() {
           </Button>
         </div>
       </div>
+
+      {actionError && (
+        <div
+          className="mb-4 rounded-lg border px-3 py-2 text-sm"
+          style={{
+            borderColor: 'color-mix(in srgb, var(--danger) 40%, var(--border))',
+            background: 'var(--danger-light)',
+            color: 'var(--danger)',
+          }}
+        >
+          <p className="flex items-center gap-1.5">
+            <AlertCircle className="h-4 w-4" />
+            {actionError}
+          </p>
+        </div>
+      )}
 
       {/* Content Sections */}
       <div className="space-y-4">

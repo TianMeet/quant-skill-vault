@@ -15,13 +15,23 @@ function normalizeTags(tags: string[]): string[] {
   return [...new Set(tags.map((t) => t.trim()).filter(Boolean))]
 }
 
+function parseSkillId(rawId: string): number | null {
+  const skillId = Number(rawId)
+  if (!Number.isInteger(skillId) || skillId <= 0) return null
+  return skillId
+}
+
 /**
  * GET /api/skills/:id - 获取单个 Skill
  */
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   const { id } = await params
+  const skillId = parseSkillId(id)
+  if (!skillId) {
+    return NextResponse.json({ error: 'Invalid skill id' }, { status: 400 })
+  }
   const skill = await prisma.skill.findUnique({
-    where: { id: Number(id) },
+    where: { id: skillId },
     include: { tags: { include: { tag: true } } },
   })
 
@@ -40,11 +50,15 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
  */
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   const { id } = await params
+  const skillId = parseSkillId(id)
+  if (!skillId) {
+    return NextResponse.json({ error: 'Invalid skill id' }, { status: 400 })
+  }
   try {
     const body = await request.json()
     const parsed = updateSkillSchema.parse(body)
 
-    const existing = await prisma.skill.findUnique({ where: { id: Number(id) } })
+    const existing = await prisma.skill.findUnique({ where: { id: skillId } })
     if (!existing) {
       return NextResponse.json({ error: 'Skill not found' }, { status: 404 })
     }
@@ -77,7 +91,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     const skill = await prisma.skill.update({
-      where: { id: Number(id) },
+      where: { id: skillId },
       data: {
         ...(parsed.title && { title: parsed.title }),
         ...(parsed.title && { slug }),
@@ -115,11 +129,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
  */
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   const { id } = await params
-  const existing = await prisma.skill.findUnique({ where: { id: Number(id) } })
+  const skillId = parseSkillId(id)
+  if (!skillId) {
+    return NextResponse.json({ error: 'Invalid skill id' }, { status: 400 })
+  }
+  const existing = await prisma.skill.findUnique({ where: { id: skillId } })
   if (!existing) {
     return NextResponse.json({ error: 'Skill not found' }, { status: 404 })
   }
 
-  await prisma.skill.delete({ where: { id: Number(id) } })
+  await prisma.skill.delete({ where: { id: skillId } })
   return NextResponse.json({ success: true })
 }

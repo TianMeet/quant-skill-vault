@@ -11,6 +11,65 @@ export const runtime = 'nodejs'
 type RouteParams = { params: Promise<{ id: string }> }
 
 const VALID_ACTIONS: AiAction[] = ['update-skill', 'fix-lint', 'create-supporting-files']
+const PROMPT_SOFT_LIMIT = 7600
+
+function truncateText(text: string, max: number): string {
+  if (text.length <= max) return text
+  return `${text.slice(0, max)}...`
+}
+
+function truncateList(items: string[], maxItems: number, maxItemLength: number): string[] {
+  return items.slice(0, maxItems).map((item) => truncateText(item, maxItemLength))
+}
+
+function buildPromptSkillSnapshot(skillData: SkillData, compact = false): Record<string, unknown> {
+  const base: Record<string, unknown> = {
+    title: truncateText(skillData.title, 200),
+    slug: skillData.slug,
+    summary: truncateText(skillData.summary, compact ? 320 : 900),
+    steps: truncateList(skillData.steps, 7, compact ? 140 : 280),
+    triggers: truncateList(skillData.triggers, 8, compact ? 100 : 180),
+    guardrails: skillData.guardrails,
+    tests: (skillData.tests || []).slice(0, compact ? 2 : 5).map((t) => ({
+      name: truncateText(t.name, compact ? 100 : 180),
+      input: truncateText(t.input, compact ? 180 : 320),
+      expected_output: truncateText(t.expected_output, compact ? 180 : 320),
+    })),
+    tags: (skillData.tags || []).slice(0, 12),
+  }
+
+  if (!compact) {
+    base.inputs = truncateText(skillData.inputs, 1000)
+    base.outputs = truncateText(skillData.outputs, 1000)
+    base.risks = truncateText(skillData.risks, 1000)
+  }
+
+  return base
+}
+
+function buildPrompt(
+  action: AiAction,
+  skillSnapshot: Record<string, unknown>,
+  filesIndex: Array<{ path: string; mime: string; size: number }>,
+  lintErrors: string[],
+  instruction?: string,
+): string {
+  const promptParts: string[] = [
+    `Action: ${action}`,
+    `Current skill (JSON): ${JSON.stringify(skillSnapshot)}`,
+    `Supporting files index: ${JSON.stringify(filesIndex)}`,
+  ]
+
+  if (lintErrors.length > 0) {
+    promptParts.push(`Current lint errors:\n${lintErrors.slice(0, 20).map((e) => truncateText(e, 220)).join('\n')}`)
+  }
+
+  if (instruction) {
+    promptParts.push(`User instruction: ${truncateText(instruction, 1200)}`)
+  }
+
+  return promptParts.join('\n\n')
+}
 
 /**
  * POST /api/skills/:id/ai/propose
@@ -18,9 +77,13 @@ const VALID_ACTIONS: AiAction[] = ['update-skill', 'fix-lint', 'create-supportin
  */
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const { id } = await params
+  const skillId = Number(id)
+  if (!Number.isInteger(skillId) || skillId <= 0) {
+    return NextResponse.json({ error: 'Invalid skill id' }, { status: 400 })
+  }
 
   const skill = await prisma.skill.findUnique({
-    where: { id: Number(id) },
+    where: { id: skillId },
     include: { tags: { include: { tag: true } } },
   })
   if (!skill) {
@@ -76,21 +139,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   }
 
   // 组装 user prompt
-  const promptParts: string[] = [
-    `Action: ${action}`,
-    `Current skill (JSON): ${JSON.stringify(skillData, null, 2)}`,
-    `Supporting files index: ${JSON.stringify(filesIndex)}`,
-  ]
+  const fullPrompt = buildPrompt(
+    action,
+    buildPromptSkillSnapshot(skillData, false),
+    filesIndex.slice(0, 80),
+    lintErrors,
+    typeof body.instruction === 'string' ? body.instruction : undefined,
+  )
 
-  if (lintErrors.length > 0) {
-    promptParts.push(`Current lint errors:\n${lintErrors.join('\n')}`)
-  }
-
-  if (body.instruction) {
-    promptParts.push(`User instruction: ${body.instruction}`)
-  }
-
-  const prompt = promptParts.join('\n\n')
+  const prompt = fullPrompt.length > PROMPT_SOFT_LIMIT
+    ? buildPrompt(
+        action,
+        buildPromptSkillSnapshot(skillData, true),
+        filesIndex.slice(0, 24),
+        lintErrors,
+        typeof body.instruction === 'string' ? body.instruction : undefined,
+      )
+    : fullPrompt
 
   // 调用 Claude CLI
   const result = await runClaude({

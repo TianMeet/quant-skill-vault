@@ -187,13 +187,13 @@ export function toUserFriendlyErrorMessage(raw: unknown): string {
   }
   const message = raw.trim()
 
-  if (message === 'Validation failed') {
+  if (message === 'Validation failed' || message.startsWith('Validation failed')) {
     return '提交内容未通过校验，请补齐必填项后重试。'
   }
-  if (message === 'Cannot generate valid slug from title') {
+  if (message === 'Cannot generate valid slug from title' || message.startsWith('Cannot generate valid slug from title')) {
     return '标题暂时无法生成有效标识名，请调整标题后再试。'
   }
-  if (message === 'Slug already exists') {
+  if (message === 'Slug already exists' || message.startsWith('Slug already exists')) {
     return '已存在同名 Skill，请修改标题后重试。'
   }
   if (message === 'Lint check failed') {
@@ -201,6 +201,12 @@ export function toUserFriendlyErrorMessage(raw: unknown): string {
   }
   if (message === 'Invalid changeSet') {
     return 'AI 生成的变更格式不正确，请重新生成建议。'
+  }
+  if (message === 'Claude CLI failed') {
+    return 'AI 服务调用失败，请稍后重试。'
+  }
+  if (message.startsWith('Prompt exceeds')) {
+    return '当前内容过长，AI 暂时无法处理，请精简后重试。'
   }
   if (message === 'Binary file exceeds 2MB limit') {
     return '二进制文件过大（超过 2MB），请压缩后再上传。'
@@ -219,6 +225,18 @@ export function toUserFriendlyErrorMessage(raw: unknown): string {
   }
   if (message === 'Skill not found') {
     return '未找到当前 Skill，可能已被删除。'
+  }
+  if (message === 'Invalid skill id') {
+    return '链接中的 Skill 标识无效，请返回列表后重试。'
+  }
+  if (message === 'Invalid JSON body') {
+    return '请求格式不正确，请刷新页面后重试。'
+  }
+  if (message === 'path is required') {
+    return '缺少文件路径，请填写后重试。'
+  }
+  if (message === 'content must be string') {
+    return '文件内容格式不正确，请重试。'
   }
   if (message === 'Network error' || message.includes('Network error')) {
     return '网络连接异常，请检查网络后重试。'

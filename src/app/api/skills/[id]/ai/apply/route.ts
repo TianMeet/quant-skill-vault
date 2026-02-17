@@ -17,15 +17,25 @@ function normalizeTags(tags: string[]): string[] {
   return [...new Set(tags.map((t) => t.trim()).filter(Boolean))]
 }
 
+function parseSkillId(rawId: string): number | null {
+  const skillId = Number(rawId)
+  if (!Number.isInteger(skillId) || skillId <= 0) return null
+  return skillId
+}
+
 /**
  * POST /api/skills/:id/ai/apply
  * 应用变更提案到数据库
  */
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const { id } = await params
+  const skillId = parseSkillId(id)
+  if (!skillId) {
+    return NextResponse.json({ error: 'Invalid skill id' }, { status: 400 })
+  }
 
   const skill = await prisma.skill.findUnique({
-    where: { id: Number(id) },
+    where: { id: skillId },
     include: { tags: { include: { tag: true } } },
   })
   if (!skill) {
@@ -101,7 +111,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     await prisma.$transaction(async (tx) => {
       if (Object.keys(updateData).length > 0) {
         await tx.skill.update({
-          where: { id: Number(id) },
+          where: { id: skillId },
           data: updateData,
         })
       }
@@ -111,7 +121,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         if (fop.op === 'upsert') {
           const isBinary = !!fop.content_base64
           const existing = await tx.skillFile.findUnique({
-            where: { skillId_path: { skillId: Number(id), path: fop.path } },
+            where: { skillId_path: { skillId, path: fop.path } },
           })
 
           if (isBinary) {
@@ -123,7 +133,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
           if (existing) {
             await tx.skillFile.update({
-              where: { skillId_path: { skillId: Number(id), path: fop.path } },
+              where: { skillId_path: { skillId, path: fop.path } },
               data: {
                 mime: fop.mime || existing.mime,
                 isBinary,
@@ -134,7 +144,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           } else {
             await tx.skillFile.create({
               data: {
-                skillId: Number(id),
+                skillId,
                 path: fop.path,
                 mime: fop.mime || 'text/plain',
                 isBinary,
@@ -146,7 +156,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         } else if (fop.op === 'delete') {
           try {
             await tx.skillFile.delete({
-              where: { skillId_path: { skillId: Number(id), path: fop.path } },
+              where: { skillId_path: { skillId, path: fop.path } },
             })
           } catch {
             // File may not exist, ignore
@@ -157,7 +167,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // 3) Return updated skill
     const updated = await prisma.skill.findUnique({
-      where: { id: Number(id) },
+      where: { id: skillId },
       include: { tags: { include: { tag: true } } },
     })
 

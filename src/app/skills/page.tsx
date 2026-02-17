@@ -29,29 +29,49 @@ export default function SkillsListPage() {
   const [query, setQuery] = useState('')
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
 
   const fetchTags = useCallback(async () => {
-    const res = await fetch('/api/tags')
-    if (res.ok) setTags(await res.json())
+    try {
+      const res = await fetch('/api/tags')
+      if (res.ok) {
+        setTags(await res.json())
+      } else {
+        setTags([])
+      }
+    } catch {
+      setTags([])
+    }
   }, [])
 
   const fetchSkills = useCallback(async () => {
     setLoading(true)
+    setLoadError('')
     const params = new URLSearchParams()
     if (query) params.set('query', query)
     if (selectedTags.length > 0) params.set('tags', selectedTags.join(','))
-    const res = await fetch(`/api/skills?${params}`)
-    if (res.ok) setSkills(await res.json())
-    setLoading(false)
+    try {
+      const res = await fetch(`/api/skills?${params}`)
+      if (res.ok) {
+        setSkills(await res.json())
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setSkills([])
+        setLoadError(toUserFriendlyErrorMessage(data.error || `加载失败（${res.status}）`))
+      }
+    } catch {
+      setSkills([])
+      setLoadError('加载列表失败，请稍后重试。')
+    } finally {
+      setLoading(false)
+    }
   }, [query, selectedTags])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchTags()
   }, [fetchTags])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchSkills()
   }, [fetchSkills])
 
@@ -124,6 +144,19 @@ export default function SkillsListPage() {
       </div>
 
       {/* Skills Grid */}
+      {loadError && (
+        <div
+          className="mb-4 rounded-lg border px-3 py-2 text-sm"
+          style={{
+            borderColor: 'color-mix(in srgb, var(--danger) 40%, var(--border))',
+            background: 'var(--danger-light)',
+            color: 'var(--danger)',
+          }}
+        >
+          {loadError}
+        </div>
+      )}
+
       {loading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
