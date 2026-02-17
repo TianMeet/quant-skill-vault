@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Download, Edit, Trash2, AlertCircle, CheckCircle, File, ChevronLeft, Shield, Zap, FlaskConical } from 'lucide-react'
 import type { SkillGuardrails, SkillTestCase } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { toFriendlyLintIssues } from '@/lib/friendly-validation'
 
 interface SkillDetail {
   id: number
@@ -48,6 +49,7 @@ export default function SkillDetailPage() {
   const [lintPassed, setLintPassed] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [files, setFiles] = useState<SkillFileItem[]>([])
+  const friendlyLintIssues = useMemo(() => toFriendlyLintIssues(lintErrors), [lintErrors])
 
   const fetchSkill = useCallback(async () => {
     if (!skillId) return
@@ -82,16 +84,20 @@ export default function SkillDetailPage() {
   async function handleLint() {
     setLintErrors([])
     setLintPassed(false)
-    const res = await fetch('/api/lint', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(skill),
-    })
-    const data = await res.json()
-    if (data.valid) {
-      setLintPassed(true)
-    } else {
-      setLintErrors(data.errors)
+    try {
+      const res = await fetch('/api/lint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(skill),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (data.valid) {
+        setLintPassed(true)
+      } else {
+        setLintErrors(Array.isArray(data.errors) ? data.errors : [{ field: 'body', message: 'Invalid request body' }])
+      }
+    } catch {
+      setLintErrors([{ field: 'body', message: 'Invalid request body' }])
     }
   }
 
@@ -355,16 +361,21 @@ export default function SkillDetailPage() {
             运行校验
           </Button>
 
-          {lintErrors.length > 0 && (
+          {friendlyLintIssues.length > 0 && (
             <div className="mt-4 rounded-lg p-4" style={{ background: 'var(--danger-light)' }}>
               <p className="font-medium text-sm flex items-center gap-2 mb-2" style={{ color: 'var(--danger)' }}>
                 <AlertCircle className="h-4 w-4" /> 校验失败
               </p>
-              <ul className="space-y-1">
-                {lintErrors.map((e, i) => (
+              <ul className="space-y-2">
+                {friendlyLintIssues.map((e, i) => (
                   <li key={i} className="text-sm" style={{ color: 'var(--danger)' }}>
-                    <span className="font-mono text-xs rounded px-1.5 py-0.5" style={{ background: 'var(--danger-light)' }}>{e.field}</span>{' '}
+                    <span className="text-xs rounded px-1.5 py-0.5" style={{ background: 'color-mix(in srgb, var(--danger-light) 65%, var(--background))' }}>{e.fieldLabel}</span>{' '}
                     {e.message}
+                    {e.suggestion && (
+                      <p className="mt-1 text-xs" style={{ color: 'color-mix(in srgb, var(--danger) 82%, var(--muted-foreground))' }}>
+                        建议：{e.suggestion}
+                      </p>
+                    )}
                   </li>
                 ))}
               </ul>

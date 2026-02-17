@@ -121,14 +121,14 @@ async function main() {
         ...rest,
         tags: {
           deleteMany: {},
-          create: tagRecords.map((t) => ({ tagId: t.id })),
+          create: tagRecords.map((t:any) => ({ tagId: t.id })),
         },
       },
       create: {
         ...rest,
         slug,
         tags: {
-          create: tagRecords.map((t) => ({ tagId: t.id })),
+          create: tagRecords.map((t:any) => ({ tagId: t.id })),
         },
       },
     })

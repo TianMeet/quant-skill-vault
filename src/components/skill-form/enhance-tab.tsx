@@ -1,9 +1,11 @@
 'use client'
 
+import { useMemo } from 'react'
 import { AlertCircle, CheckCircle, Eye, File, Loader2, Wand2 } from 'lucide-react'
 import { FormField } from '@/components/ui/form-field'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { toFriendlyLintIssues } from '@/lib/friendly-validation'
 
 export interface AiChangeSet {
   skillPatch: Record<string, unknown>
@@ -53,6 +55,11 @@ export function SkillFormEnhanceTab({
   handleAiApply,
   clearAiChangeSet,
 }: EnhanceTabProps) {
+  const friendlyLintIssues = useMemo(
+    () => toFriendlyLintIssues(aiLintPreview?.errors ?? []),
+    [aiLintPreview],
+  )
+
   if (!skillId) {
     return <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>请先保存 Skill 以使用增强功能。</p>
   }
@@ -157,9 +164,10 @@ export function SkillFormEnhanceTab({
               </p>
               {!aiLintPreview.valid && (
                 <ul className="mt-2 space-y-1">
-                  {aiLintPreview.errors.map((e, i) => (
+                  {friendlyLintIssues.map((e, i) => (
                     <li key={i} className="text-xs text-amber-600">
-                      <span className="font-mono bg-amber-100 px-1 rounded">{e.field}</span> {e.message}
+                      <span className="bg-amber-100 px-1 rounded">{e.fieldLabel}</span> {e.message}
+                      {e.suggestion && <p className="mt-0.5 text-[11px] text-amber-700">建议：{e.suggestion}</p>}
                     </li>
                   ))}
                 </ul>

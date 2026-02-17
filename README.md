@@ -163,6 +163,42 @@ CLAUDE_TIMEOUT_MS=60000    # 超时时间
 CHAT_PROVIDER=mock
 ```
 
+## 本地 Skill Creator 工作流（参考 Anthropic 官方）
+
+参考实现：<https://github.com/anthropics/skills/tree/main/skills/skill-creator>
+
+本项目新增了本地脚手架/校验/打包流程，便于在仓库外或导入前先本地整理 Skill：
+
+### 1) 初始化 Skill 目录
+
+```bash
+pnpm skill:init -- my-new-skill ./local-skills
+```
+
+会生成：
+- `local-skills/my-new-skill/SKILL.md`
+- `references/`, `examples/`, `scripts/`, `assets/`, `templates/`
+
+### 2) 快速校验
+
+```bash
+pnpm skill:validate -- ./local-skills/my-new-skill
+```
+
+校验内容包括：
+- frontmatter 必填字段（`name`, `description`）
+- `name` 格式（`^[a-z0-9-]{1,64}$`）
+- `description` 长度（<= 1024）
+- 相对链接文件存在性与路径安全性
+
+### 3) 打包为 `.skill`
+
+```bash
+pnpm skill:package -- ./local-skills/my-new-skill
+```
+
+输出示例：`./local-skills/my-new-skill.skill`
+
 ## 项目结构
 
 ```
@@ -212,3 +248,6 @@ cp .env.example .env
 | `pnpm test:unit` | 运行单元测试 |
 | `pnpm test:api` | 运行 API 测试 |
 | `pnpm test:e2e` | 运行 E2E 测试 |
+| `pnpm skill:init -- <name> [dir]` | 初始化本地 Skill 目录（官方 skill-creator 风格） |
+| `pnpm skill:validate -- <skillDir>` | 校验本地 Skill（frontmatter + 链接 + 结构） |
+| `pnpm skill:package -- <skillDir> [outputDir]` | 打包为 `.skill` 文件 |

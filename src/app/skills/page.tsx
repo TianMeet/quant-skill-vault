@@ -6,6 +6,7 @@ import { Search, Download, ArrowRight, Package } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { toFriendlyLintSummary, toUserFriendlyErrorMessage } from '@/lib/friendly-validation'
 
 interface Skill {
   id: number
@@ -65,8 +66,12 @@ export default function SkillsListPage() {
     e.stopPropagation()
     const res = await fetch(`/api/skills/${id}/export.zip`)
     if (!res.ok) {
-      const data = await res.json()
-      alert(`导出失败：${data.errors?.map((e: { message: string }) => e.message).join(', ') || data.error}`)
+      const data = await res.json().catch(() => ({}))
+      const details =
+        Array.isArray(data.errors) && data.errors.length > 0
+          ? toFriendlyLintSummary(data.errors)
+          : toUserFriendlyErrorMessage(data.error)
+      alert(`导出失败：\n${details}`)
       return
     }
     const blob = await res.blob()

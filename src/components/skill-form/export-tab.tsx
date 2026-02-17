@@ -1,7 +1,9 @@
 'use client'
 
+import { useMemo } from 'react'
 import { AlertCircle, CheckCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { toFriendlyLintIssues } from '@/lib/friendly-validation'
 
 interface ExportTabProps {
   roundedLgClass: string
@@ -20,19 +22,27 @@ export function SkillFormExportTab({
   skillId,
   handleLint,
 }: ExportTabProps) {
+  const friendlyIssues = useMemo(() => toFriendlyLintIssues(lintErrors), [lintErrors])
+
   return (
     <div className="space-y-4">
       <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>导出前请先运行校验检查，所有验证必须通过。</p>
       <Button onClick={() => void handleLint()} type="button" variant="secondary" className={`${roundedLgClass} px-4`}>
         运行校验
       </Button>
-      {lintErrors.length > 0 && (
+      {friendlyIssues.length > 0 && (
         <div className={`${roundedLgClass} p-4`} style={{ background: 'var(--danger-light)' }}>
           <p className="font-medium mb-2 flex items-center gap-2 text-sm" style={{ color: 'var(--danger)' }}><AlertCircle className="h-4 w-4" /> 校验失败</p>
-          <ul className="space-y-1">
-            {lintErrors.map((e, i) => (
+          <ul className="space-y-2">
+            {friendlyIssues.map((e, i) => (
               <li key={i} className="text-sm" style={{ color: 'var(--danger)' }}>
-                <span className="font-mono text-xs rounded px-1.5 py-0.5" style={{ background: 'var(--danger-light)' }}>{e.field}</span> {e.message}
+                <span className="text-xs rounded px-1.5 py-0.5" style={{ background: 'color-mix(in srgb, var(--danger-light) 65%, var(--background))' }}>{e.fieldLabel}</span>{' '}
+                {e.message}
+                {e.suggestion && (
+                  <p className="mt-1 text-xs" style={{ color: 'color-mix(in srgb, var(--danger) 82%, var(--muted-foreground))' }}>
+                    建议：{e.suggestion}
+                  </p>
+                )}
               </li>
             ))}
           </ul>

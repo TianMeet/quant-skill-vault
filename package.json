@@ -19,7 +19,10 @@
     "test:api": "vitest run src/app/api/__tests__",
     "test:e2e": "playwright test",
     "test:watch": "vitest",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "skill:init": "node scripts/init-local-skill.js",
+    "skill:validate": "node scripts/quick-validate-skill.js",
+    "skill:package": "node scripts/package-local-skill.js"
   },
   "prisma": {
     "seed": "npx tsx prisma/seed.ts"

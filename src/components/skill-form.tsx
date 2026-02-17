@@ -13,6 +13,7 @@ import { SkillFormGuardrailsTab } from '@/components/skill-form/guardrails-tab'
 import { SkillFormTestsTab } from '@/components/skill-form/tests-tab'
 import { SkillFormTriggersTab } from '@/components/skill-form/triggers-tab'
 import { useSkillFormValidation } from '@/components/skill-form/use-skill-form-validation'
+import { toUserFriendlyErrorMessage } from '@/lib/friendly-validation'
 import { AlertCircle } from 'lucide-react'
 
 interface SkillFormProps {
@@ -101,10 +102,10 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
         await loadFiles()
       } else {
         const data = await res.json().catch(() => ({}))
-        setUIField('error', data.error || `Failed to create file (${res.status})`)
+        setUIField('error', toUserFriendlyErrorMessage(data.error || `创建文件失败（${res.status}）`))
       }
     } catch {
-      setUIField('error', 'Network error creating file')
+      setUIField('error', '创建文件时网络异常，请重试。')
     }
     setFileSaving(false)
   }
@@ -124,18 +125,38 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   async function handleSaveFile() {
     if (!skillId || !selectedFile) return
     setFileSaving(true)
-    await fetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(selectedFile.path)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: fileContent }),
-    })
+    setUIField('error', '')
+    try {
+      const res = await fetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(selectedFile.path)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: fileContent }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setUIField('error', toUserFriendlyErrorMessage(data.error || '保存文件失败'))
+      }
+    } catch {
+      setUIField('error', '保存文件时网络异常，请重试。')
+    }
     setFileSaving(false)
     await loadFiles()
   }
 
   async function handleDeleteFile(path: string) {
     if (!skillId || !confirm(`Delete ${path}?`)) return
-    await fetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(path)}`, { method: 'DELETE' })
+    setUIField('error', '')
+    try {
+      const res = await fetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(path)}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setUIField('error', toUserFriendlyErrorMessage(data.error || '删除文件失败'))
+        return
+      }
+    } catch {
+      setUIField('error', '删除文件时网络异常，请重试。')
+      return
+    }
     if (selectedFile?.path === path) { setSelectedFile(null); setFileContent('') }
     await loadFiles()
   }
@@ -145,14 +166,24 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     const file = e.target.files[0]
     const path = `assets/${file.name}`
     const reader = new FileReader()
+    setUIField('error', '')
     reader.onload = async () => {
       const base64 = (reader.result as string).split(',')[1]
-      await fetch(`/api/skills/${skillId}/files`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path, content: base64, mime: file.type || 'application/octet-stream', isBinary: true }),
-      })
-      await loadFiles()
+      try {
+        const res = await fetch(`/api/skills/${skillId}/files`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path, content: base64, mime: file.type || 'application/octet-stream', isBinary: true }),
+        })
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          setUIField('error', toUserFriendlyErrorMessage(data.error || `上传文件失败（${res.status}）`))
+          return
+        }
+        await loadFiles()
+      } catch {
+        setUIField('error', '上传文件时网络异常，请重试。')
+      }
     }
     reader.readAsDataURL(file)
     e.target.value = ''
@@ -186,14 +217,14 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       const method = isEdit ? 'PUT' : 'POST'
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       if (!res.ok) {
-        const data = await res.json()
-        setUIField('error', data.error || 'Save failed')
+        const data = await res.json().catch(() => ({}))
+        setUIField('error', toUserFriendlyErrorMessage(data.error || '保存失败'))
         return
       }
       const data = await res.json()
       router.push(`/skills/${data.id}`)
     } catch {
-      setUIField('error', 'Network error')
+      setUIField('error', '保存时网络异常，请重试。')
     } finally {
       setUIField('saving', false)
     }
@@ -209,10 +240,10 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       if (data.valid) {
         setUIField('lintPassed', true)
       } else {
-        setUIField('lintErrors', data.errors)
+        setUIField('lintErrors', Array.isArray(data.errors) ? data.errors : [])
       }
     } catch {
-      setUIField('error', 'Lint check failed')
+      setUIField('error', '运行校验失败，请稍后重试。')
     }
   }
 
@@ -247,13 +278,13 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       })
       const data = await res.json()
       if (!res.ok) {
-        setAiError(data.error || `AI 建议失败 (${res.status})`)
+        setAiError(toUserFriendlyErrorMessage(data.error || `AI 建议失败（${res.status}）`))
         return
       }
       setAiChangeSet(data.changeSet)
       setAiLintPreview(data.lintPreview)
     } catch {
-      setAiError('调用 AI 时网络错误')
+      setAiError('调用 AI 时网络异常，请重试。')
     } finally {
       setAiLoading(false)
     }
@@ -271,13 +302,13 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       })
       const data = await res.json()
       if (!res.ok) {
-        setAiError(data.error || `AI 应用失败 (${res.status})`)
+        setAiError(toUserFriendlyErrorMessage(data.error || `AI 应用失败（${res.status}）`))
         return
       }
       setAiApplied(true)
       setTimeout(() => window.location.reload(), 1000)
     } catch {
-      setAiError('应用变更时网络错误')
+      setAiError('应用变更时网络异常，请重试。')
     } finally {
       setAiApplying(false)
     }
