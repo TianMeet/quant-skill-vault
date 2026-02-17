@@ -1,14 +1,21 @@
 'use client'
 
 import { useRef, useEffect, useState, useMemo, useCallback, type KeyboardEvent } from 'react'
-import { Send, RotateCcw, Square, Terminal } from 'lucide-react'
+import { Send, RotateCcw, Square, Terminal, Sparkles, Loader2 } from 'lucide-react'
 import { useChat } from '@/lib/chat/use-chat'
 import { useSkillStore } from '@/lib/stores/skill-store'
 import { ChatMessage, StreamingMessage } from './chat-message'
 import { ChatSkillPreview } from './chat-skill-preview'
 import type { SkillDraft } from '@/lib/chat/types'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+
+const QUICK_PROMPTS = [
+  '帮我创建一个代码审查 Skill',
+  '创建一个数据分析流程 Skill',
+  '我需要一个自动化测试 Skill',
+]
 
 export function ConsolePanel() {
   const store = useSkillStore()
@@ -85,136 +92,183 @@ export function ConsolePanel() {
 
   const handleReset = () => {
     reset()
+    setInput('')
+    inputRef.current?.focus()
   }
 
   return (
-    <div className="console-panel flex flex-col h-full border-l" style={{ background: 'var(--console-bg)' }}>
+    <div className="relative flex h-full flex-col bg-[var(--background)]">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b shrink-0">
-        <div className="flex items-center gap-2">
-          <Terminal className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-          <span className="text-xs font-mono font-semibold">CONSOLE</span>
-          {progress.filled > 0 && (
-            <span
-              className="text-[10px] font-mono font-medium px-1.5 py-0.5"
-              style={{
-                background: progress.filled === progress.total ? 'var(--success)' : 'var(--accent)',
-                color: '#fff',
-              }}
+      <div
+        className="shrink-0 border-b bg-[var(--card)] px-3 py-2.5"
+        style={{ borderColor: 'color-mix(in srgb, var(--border) 78%, transparent)' }}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <Terminal className="h-3.5 w-3.5 text-[var(--accent)]" />
+              <span className="truncate text-xs font-semibold">AI 对话建 Skill</span>
+            </div>
+            <p className="mt-0.5 text-[10px]" style={{ color: 'var(--muted-foreground)' }}>
+              实时填充左侧表单字段
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Badge
+              variant="secondary"
+              className="h-5 rounded-md border border-[var(--border)] px-1.5 font-mono text-[10px]"
             >
               {progress.filled}/{progress.total}
-            </span>
-          )}
+            </Badge>
+            {isStreaming && (
+              <Badge
+                variant="outline"
+                className="h-5 gap-1 rounded-md border-[var(--accent)] px-1.5 text-[10px] text-[var(--accent)]"
+              >
+                <Loader2 className="h-3 w-3 animate-spin" />
+                生成中
+              </Badge>
+            )}
+            <Button
+              onClick={handleReset}
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 p-0 text-[var(--muted-foreground)]"
+              title="重置对话"
+              aria-label="重置对话"
+            >
+              <RotateCcw className="h-3 w-3" />
+            </Button>
+          </div>
         </div>
-        <Button
-          onClick={handleReset}
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 p-0"
-          title="重置对话"
-          aria-label="重置对话"
-        >
-          <RotateCcw className="h-3 w-3" style={{ color: 'var(--muted-foreground)' }} />
-        </Button>
       </div>
 
       {/* 消息列表 */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3">
         {messages.length === 0 && !isStreaming && (
-          <div className="flex flex-col items-center justify-center h-full text-center px-4">
-            <Terminal className="h-8 w-8 mb-3" style={{ color: 'var(--console-border)' }} />
-            <p className="text-xs font-mono font-medium mb-1">用对话创建 Skill</p>
-            <p className="text-[10px] font-mono mb-4" style={{ color: 'var(--muted-foreground)' }}>
-              描述你想创建的 Skill，AI 会实时填充左侧表单
-            </p>
-            <div className="space-y-1.5 w-full max-w-[240px]">
-              {['帮我创建一个代码审查 Skill', '创建一个数据分析流程 Skill', '我需要一个自动化测试 Skill'].map((prompt) => (
-                <Button
-                  key={prompt}
-                  onClick={() => sendMessage(prompt)}
-                  variant="outline"
-                  className="h-auto w-full justify-start rounded-none border-[var(--console-border)] bg-transparent px-3 py-2 text-left text-[11px] font-mono text-[var(--console-muted)] hover:border-[var(--console-accent)] hover:bg-transparent"
-                  style={{ borderColor: 'var(--console-border)', color: 'var(--console-muted)' }}
+          <div className="flex h-full flex-col items-center justify-center px-3 text-center">
+            <div
+              className="w-full max-w-[320px] rounded-xl border border-dashed p-4"
+              style={{ borderColor: 'var(--border)', background: 'var(--muted)' }}
+            >
+              <div className="mb-3 flex items-center justify-center">
+                <div
+                  className="flex h-9 w-9 items-center justify-center rounded-lg"
+                  style={{ background: 'var(--card)', color: 'var(--accent)' }}
                 >
-                  {prompt}
-                </Button>
-              ))}
+                  <Sparkles className="h-4 w-4" />
+                </div>
+              </div>
+              <p className="text-sm font-medium">从一句需求开始</p>
+              <p className="mb-3 mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                AI 会边对话边补齐标题、步骤、触发词与测试
+              </p>
+              <div className="space-y-1.5">
+                {QUICK_PROMPTS.map((prompt) => (
+                  <Button
+                    key={prompt}
+                    onClick={() => sendMessage(prompt)}
+                    variant="secondary"
+                    className="h-auto w-full justify-start rounded-md px-3 py-2 text-left text-xs font-medium text-[var(--foreground)]"
+                  >
+                    {prompt}
+                  </Button>
+                ))}
+              </div>
             </div>
           </div>
         )}
 
-        {messages.map((msg) => (
-          <div key={msg.id} className="space-y-2">
-            {msg.content && <ChatMessage message={msg} />}
-            {msg.toolCall && (
-              <ChatSkillPreview
-                toolCall={msg.toolCall}
-                onConfirm={createSkill}
-                created={msg.toolResult ?? undefined}
-              />
-            )}
-          </div>
-        ))}
-
-        {isStreaming && streamingText && <StreamingMessage text={streamingText} />}
-
-        {isStreaming && !streamingText && (
-          <div className="flex gap-2 items-center">
-            <Terminal className="h-3 w-3" style={{ color: 'var(--accent)' }} />
-            <div className="flex gap-1">
-              <span className="w-1 h-1 rounded-full animate-bounce" style={{ background: 'var(--muted-foreground)', animationDelay: '0ms' }} />
-              <span className="w-1 h-1 rounded-full animate-bounce" style={{ background: 'var(--muted-foreground)', animationDelay: '150ms' }} />
-              <span className="w-1 h-1 rounded-full animate-bounce" style={{ background: 'var(--muted-foreground)', animationDelay: '300ms' }} />
+        <div className="space-y-3">
+          {messages.map((msg) => (
+            <div key={msg.id} className="space-y-2">
+              {msg.content && <ChatMessage message={msg} />}
+              {msg.toolCall && (
+                <ChatSkillPreview
+                  toolCall={msg.toolCall}
+                  onConfirm={createSkill}
+                  created={msg.toolResult ?? undefined}
+                />
+              )}
             </div>
-          </div>
-        )}
+          ))}
+
+          {isStreaming && streamingText && <StreamingMessage text={streamingText} />}
+
+          {isStreaming && !streamingText && (
+            <div className="flex items-center gap-2 pl-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--accent)]" />
+              AI 正在思考并生成回答...
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* 输入区 — 跟随全局主题 */}
-      <div className="console-input shrink-0 border-t px-3 py-2">
+      {/* 输入区 */}
+      <div
+        className="shrink-0 border-t bg-[var(--card)] px-3 py-2.5"
+        style={{ borderColor: 'color-mix(in srgb, var(--border) 78%, transparent)' }}
+      >
         <div
-          className="flex items-end gap-2 border rounded-md px-2.5 py-1.5"
-          style={{ background: 'var(--card)', borderColor: 'var(--border)' }}
+          className="rounded-lg border px-2.5 py-2 shadow-sm transition-all focus-within:ring-2 focus-within:ring-[var(--input-ring)]"
+          style={{ background: 'var(--background)', borderColor: 'var(--input-border)' }}
         >
           <Textarea
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="描述你想创建的 Skill..."
-            rows={1}
-            density="compact"
-            className="flex-1 min-h-[20px] resize-none border-0 bg-transparent px-0 py-0 text-sm shadow-none focus-visible:ring-0"
-            style={{ maxHeight: '80px', minHeight: '20px', color: 'var(--foreground)' }}
+            placeholder="描述你想创建的 Skill，例如：帮我做一个用于量化策略复盘的分析 Skill..."
+            rows={2}
+            className="min-h-[42px] max-h-[120px] resize-none border-0 bg-transparent px-0 py-0 text-sm shadow-none focus-visible:ring-0"
             disabled={isStreaming}
             aria-label="输入消息"
           />
-          {isStreaming ? (
-            <Button
-              onClick={stopStreaming}
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 shrink-0 rounded-md p-0 text-[var(--danger)]"
-              aria-label="停止生成"
-            >
-              <Square className="h-4 w-4" />
-            </Button>
-          ) : (
-            <Button
-              onClick={handleSend}
-              disabled={!input.trim()}
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 shrink-0 rounded-md p-0 text-[var(--accent)] disabled:opacity-30"
-              aria-label="发送消息"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
-          )}
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <p className="text-[10px]" style={{ color: 'var(--muted-foreground)' }}>
+              Shift+Enter 换行 · Enter 发送
+            </p>
+            <div className="flex items-center gap-1.5">
+              {!isStreaming && messages.length > 0 && (
+                <Button
+                  onClick={handleReset}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-[11px]"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  重置
+                </Button>
+              )}
+              {isStreaming ? (
+                <Button
+                  onClick={stopStreaming}
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="h-7 px-2 text-[11px]"
+                  aria-label="停止生成"
+                >
+                  <Square className="h-3.5 w-3.5" />
+                  停止
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleSend}
+                  type="button"
+                  disabled={!input.trim()}
+                  size="sm"
+                  className="h-7 px-2 text-[11px]"
+                  aria-label="发送消息"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  发送
+                </Button>
+              )}
+            </div>
+          </div>
         </div>
-        <p className="text-[9px] font-mono mt-1 text-center" style={{ color: 'var(--muted-foreground)' }}>
-          Shift+Enter 换行 · Enter 发送
-        </p>
       </div>
     </div>
   )

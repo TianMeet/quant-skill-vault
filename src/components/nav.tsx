@@ -18,7 +18,7 @@ export function Nav() {
 
   return (
     <header
-      className="sticky top-0 z-50 border-b"
+      className="fixed inset-x-0 top-0 z-50 border-b"
       style={{
         background: 'color-mix(in srgb, var(--background) 80%, transparent)',
         backdropFilter: 'blur(12px)',

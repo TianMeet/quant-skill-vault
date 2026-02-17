@@ -35,13 +35,6 @@
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.06), 0 4px 6px -4px rgb(0 0 0 / 0.04);
   --radius: 10px;
 
-  /* Console Panel */
-  --console-bg: #0d1117;
-  --console-border: #30363d;
-  --console-text: #e6edf3;
-  --console-muted: #7d8590;
-  --console-accent: #6366f1;
-  --console-input-bg: #161b22;
 }
 
 @theme inline {
@@ -83,13 +76,6 @@
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.3);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4);
 
-  /* Console Panel — dark 模式下保持不变（本身就是深色） */
-  --console-bg: #0d1117;
-  --console-border: #30363d;
-  --console-text: #e6edf3;
-  --console-muted: #7d8590;
-  --console-accent: #818cf8;
-  --console-input-bg: #161b22;
 }
 
 * {
@@ -292,80 +278,4 @@ a, button, input, textarea, select {
 }
 .dark .chat-markdown th {
   background: rgba(255, 255, 255, 0.05);
-}
-
-/* ====== Console Panel — 深色终端风格 ====== */
-/* 在 .console-panel 内覆盖全局 CSS 变量，所有子组件自动继承深色配色 */
-.console-panel {
-  --background: var(--console-bg);
-  --foreground: var(--console-text);
-  --card: var(--console-input-bg);
-  --card-hover: #1c2129;
-  --border: var(--console-border);
-  --border-hover: #484f58;
-  --muted: #1c2333;
-  --muted-foreground: var(--console-muted);
-  --accent: var(--console-accent);
-  --accent-light: rgba(99, 102, 241, 0.15);
-  --danger-light: rgba(248, 81, 73, 0.15);
-  --success-light: rgba(63, 185, 80, 0.15);
-  color: var(--console-text);
-}
-.console-panel *::placeholder {
-  color: var(--console-muted);
-}
-.console-panel ::-webkit-scrollbar-thumb {
-  background: var(--console-border);
-}
-.console-panel ::-webkit-scrollbar-thumb:hover {
-  background: var(--console-muted);
-}
-.console-panel *:focus-visible {
-  outline-color: var(--console-accent);
-}
-/* console 内的 chat-markdown inline code 适配深色 */
-.console-panel .chat-markdown code {
-  background: rgba(255, 255, 255, 0.1);
-}
-.console-panel .chat-markdown pre {
-  background: rgba(0, 0, 0, 0.3);
-}
-.console-panel .chat-markdown th {
-  background: rgba(255, 255, 255, 0.05);
-}
-/* 输入区恢复全局主题，跟随 light / dark 模式 */
-.console-input {
-  --background: #fafafa;
-  --foreground: #18181b;
-  --card: #ffffff;
-  --border: #e4e4e7;
-  --border-hover: #d4d4d8;
-  --muted: #f4f4f5;
-  --muted-foreground: #71717a;
-  --accent: #4f46e5;
-  --danger: #dc2626;
-  color: var(--foreground);
-  background: var(--background);
-}
-.console-input *::placeholder {
-  color: var(--muted-foreground);
-}
-.console-input textarea:focus::placeholder,
-.console-input textarea:focus-visible::placeholder {
-  color: transparent;
-}
-.console-input textarea:focus,
-.console-input textarea:focus-visible {
-  outline: none;
-}
-:root.dark .console-input {
-  --background: #09090b;
-  --foreground: #fafafa;
-  --card: #18181b;
-  --border: #27272a;
-  --border-hover: #3f3f46;
-  --muted: #27272a;
-  --muted-foreground: #a1a1aa;
-  --accent: #6366f1;
-  --danger: #ef4444;
 }

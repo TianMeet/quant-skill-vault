@@ -24,7 +24,7 @@ export default function RootLayout({
         <ThemeProvider>
           <ChatProvider>
             <Nav />
-            <main className="pt-2">{children}</main>
+            <main className="pt-14">{children}</main>
             <ChatPanel />
           </ChatProvider>
         </ThemeProvider>
