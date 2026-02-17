@@ -283,7 +283,7 @@ a, button, input, textarea, select {
   --card-hover: #1c2129;
   --border: var(--console-border);
   --border-hover: #484f58;
-  --muted: #161b22;
+  --muted: #1c2333;
   --muted-foreground: var(--console-muted);
   --accent: var(--console-accent);
   --accent-light: rgba(99, 102, 241, 0.15);

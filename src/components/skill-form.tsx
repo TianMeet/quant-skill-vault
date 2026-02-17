@@ -232,13 +232,13 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   }
 
   const tabs = [
-    { id: 'author', label: 'Author' },
-    { id: 'triggers', label: 'Triggers' },
-    { id: 'guardrails', label: 'Guardrails' },
-    { id: 'tests', label: 'Tests' },
-    { id: 'files', label: 'Files' },
-    { id: 'enhance', label: 'Enhance' },
-    { id: 'export', label: 'Export' },
+    { id: 'author', label: '编写' },
+    { id: 'triggers', label: '触发词' },
+    { id: 'guardrails', label: '安全护栏' },
+    { id: 'tests', label: '测试' },
+    { id: 'files', label: '文件' },
+    { id: 'enhance', label: 'AI 增强' },
+    { id: 'export', label: '导出' },
   ]
 
   async function handleAiPropose(action: string) {
@@ -257,13 +257,13 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       })
       const data = await res.json()
       if (!res.ok) {
-        setAiError(data.error || `AI propose failed (${res.status})`)
+        setAiError(data.error || `AI 建议失败 (${res.status})`)
         return
       }
       setAiChangeSet(data.changeSet)
       setAiLintPreview(data.lintPreview)
     } catch {
-      setAiError('Network error calling AI')
+      setAiError('调用 AI 时网络错误')
     } finally {
       setAiLoading(false)
     }
@@ -281,13 +281,13 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       })
       const data = await res.json()
       if (!res.ok) {
-        setAiError(data.error || `AI apply failed (${res.status})`)
+        setAiError(data.error || `AI 应用失败 (${res.status})`)
         return
       }
       setAiApplied(true)
       setTimeout(() => window.location.reload(), 1000)
     } catch {
-      setAiError('Network error applying changes')
+      setAiError('应用变更时网络错误')
     } finally {
       setAiApplying(false)
     }
@@ -334,10 +334,10 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     <div className={isIndustrial ? 'px-5 py-4' : 'mx-auto max-w-4xl px-4 py-8'}>
       {/* Header */}
       <div className="flex items-baseline justify-between mb-2">
-        <h1 className={`${isIndustrial ? 'text-base' : 'text-2xl'} font-semibold`}>{isEdit ? 'Edit Skill' : 'New Skill'}</h1>
+        <h1 className={`${isIndustrial ? 'text-base' : 'text-2xl'} font-semibold`}>{isEdit ? '编辑 Skill' : '新建 Skill'}</h1>
         {!isEdit && (
           <span className="text-[11px] font-mono" style={{ color: requiredStatus.filled === requiredStatus.total ? 'var(--success)' : 'var(--muted-foreground)' }}>
-            {requiredStatus.filled}/{requiredStatus.total} {requiredStatus.filled === requiredStatus.total ? 'Ready' : 'required'}
+            {requiredStatus.filled}/{requiredStatus.total} {requiredStatus.filled === requiredStatus.total ? '就绪' : '必填'}
           </span>
         )}
       </div>
@@ -394,15 +394,15 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       {activeTab === 'author' && (
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium">Title</label>
-            <input value={title} onChange={(e) => { markUserEdited('title'); setField('title', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-2.5 text-base font-medium ${monoDataClass} ${aiRingClass('title')}`} placeholder="Skill title" />
+            <label className="mb-1 block text-sm font-medium">标题</label>
+            <input value={title} onChange={(e) => { markUserEdited('title'); setField('title', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-2.5 text-base font-medium ${monoDataClass} ${aiRingClass('title')}`} placeholder="Skill 标题" />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Summary</label>
-            <textarea value={summary} onChange={(e) => { markUserEdited('summary'); setField('summary', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-2 text-sm ${monoDataClass} ${aiRingClass('summary')}`} rows={2} placeholder="Brief description of what this skill does" />
+            <label className="mb-1 block text-sm font-medium">摘要</label>
+            <textarea value={summary} onChange={(e) => { markUserEdited('summary'); setField('summary', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-2 text-sm ${monoDataClass} ${aiRingClass('summary')}`} rows={2} placeholder="简要描述该 Skill 的功能" />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Tags</label>
+            <label className="mb-1 block text-sm font-medium">标签</label>
             <div className={`flex flex-wrap gap-1 mb-2 ${aiRingClass('tags')}`}>
               {tags.map((tag) => (
                 <span key={tag} className={`inline-flex items-center gap-1 ${roundedClass} px-2 py-0.5 text-xs font-medium`} style={{ background: 'var(--muted)', color: 'var(--muted-foreground)' }}>
@@ -412,31 +412,31 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
               ))}
             </div>
             <div className="flex gap-2">
-              <input value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())} className={`flex-1 ${roundedClass} border px-3 py-1.5 text-sm`} placeholder="Add tag..." />
-              <button onClick={handleAddTag} className={`${roundedLgClass} border px-3 py-1.5 text-sm font-medium`} style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>Add</button>
+              <input value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())} className={`flex-1 ${roundedClass} border px-3 py-1.5 text-sm`} placeholder="添加标签..." />
+              <button onClick={handleAddTag} className={`${roundedLgClass} border px-3 py-1.5 text-sm font-medium`} style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>添加</button>
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Inputs (Markdown)</label>
+            <label className="mb-1 block text-sm font-medium">输入 (Markdown)</label>
             <textarea value={inputs} onChange={(e) => { markUserEdited('inputs'); setField('inputs', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-2 text-sm font-mono ${aiRingClass('inputs')}`} rows={3} />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Outputs (Markdown)</label>
+            <label className="mb-1 block text-sm font-medium">输出 (Markdown)</label>
             <textarea value={outputs} onChange={(e) => { markUserEdited('outputs'); setField('outputs', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-2 text-sm font-mono ${aiRingClass('outputs')}`} rows={3} />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Steps (3-7)</label>
+            <label className="mb-1 block text-sm font-medium">步骤 (3-7)</label>
             {steps.map((step, i) => (
               <div key={i} className="mb-2 flex gap-2">
                 <span className="mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-mono font-medium" style={{ background: 'var(--muted)', color: 'var(--muted-foreground)' }}>{i + 1}</span>
-                <input value={step} onChange={(e) => { markUserEdited('steps'); updateStep(i, e.target.value) }} className={`flex-1 ${roundedLgClass} border px-3 py-1.5 text-sm ${monoDataClass} ${aiRingClass('steps')}`} style={{ borderColor: 'var(--border)', background: 'var(--card)' }} placeholder={`Step ${i + 1}`} />
+                <input value={step} onChange={(e) => { markUserEdited('steps'); updateStep(i, e.target.value) }} className={`flex-1 ${roundedLgClass} border px-3 py-1.5 text-sm ${monoDataClass} ${aiRingClass('steps')}`} style={{ borderColor: 'var(--border)', background: 'var(--card)' }} placeholder={`步骤 ${i + 1}`} />
                 {steps.length > 3 && <button onClick={() => { markUserEdited('steps'); removeStep(i) }} className="opacity-40 hover:opacity-100" style={{ color: 'var(--danger)' }}><Trash2 className="h-4 w-4" /></button>}
               </div>
             ))}
-            {steps.length < 7 && <button onClick={addStep} className="inline-flex items-center gap-1 text-xs hover:opacity-70" style={{ color: 'var(--muted-foreground)' }}><Plus className="h-3 w-3" /> Add step</button>}
+            {steps.length < 7 && <button onClick={addStep} className="inline-flex items-center gap-1 text-xs hover:opacity-70" style={{ color: 'var(--muted-foreground)' }}><Plus className="h-3 w-3" /> 添加步骤</button>}
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Risks (Markdown)</label>
+            <label className="mb-1 block text-sm font-medium">风险 (Markdown)</label>
             <textarea value={risks} onChange={(e) => { markUserEdited('risks'); setField('risks', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-2 text-sm font-mono ${aiRingClass('risks')}`} rows={3} />
           </div>
         </div>
@@ -445,18 +445,18 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       {/* Triggers Tab */}
       {activeTab === 'triggers' && (
         <div className="space-y-4">
-          <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Trigger phrases will be included in the exported description (wrapped in double quotes). Minimum 3 required.</p>
+          <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>触发短语将包含在导出描述中（用双引号包裹）。至少需要 3 个。</p>
           {triggers.map((trigger, i) => (
             <div key={i} className="flex gap-2">
-              <input value={trigger} onChange={(e) => { markUserEdited('triggers'); updateTrigger(i, e.target.value) }} className={`flex-1 ${roundedLgClass} border px-3 py-2 text-sm ${monoDataClass} ${aiRingClass('triggers')}`} style={{ borderColor: 'var(--border)', background: 'var(--card)' }} placeholder={`Trigger phrase ${i + 1}`} />
+              <input value={trigger} onChange={(e) => { markUserEdited('triggers'); updateTrigger(i, e.target.value) }} className={`flex-1 ${roundedLgClass} border px-3 py-2 text-sm ${monoDataClass} ${aiRingClass('triggers')}`} style={{ borderColor: 'var(--border)', background: 'var(--card)' }} placeholder={`触发短语 ${i + 1}`} />
               {triggers.length > 3 && <button onClick={() => { markUserEdited('triggers'); removeTrigger(i) }} className="opacity-40 hover:opacity-100" style={{ color: 'var(--danger)' }}><Trash2 className="h-4 w-4" /></button>}
             </div>
           ))}
-          <button onClick={addTrigger} className="inline-flex items-center gap-1 text-sm hover:opacity-70" style={{ color: 'var(--muted-foreground)' }}><Plus className="h-4 w-4" /> Add trigger</button>
+          <button onClick={addTrigger} className="inline-flex items-center gap-1 text-sm hover:opacity-70" style={{ color: 'var(--muted-foreground)' }}><Plus className="h-4 w-4" /> 添加触发词</button>
           {triggers.filter(Boolean).length >= 3 && (
             <div className={`mt-4 ${roundedLgClass} p-3 text-sm`} style={{ background: 'var(--muted)' }}>
-              <p className="font-medium mb-1">Preview (description excerpt):</p>
-              <p style={{ color: 'var(--muted-foreground)' }}>Trigger phrases: {triggers.filter(Boolean).map((t) => `"${t}"`).join(', ')}</p>
+              <p className="font-medium mb-1">预览（描述摘录）：</p>
+              <p style={{ color: 'var(--muted-foreground)' }}>触发短语：{triggers.filter(Boolean).map((t) => `"${t}"`).join(', ')}</p>
             </div>
           )}
         </div>
@@ -466,7 +466,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       {activeTab === 'guardrails' && (
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium">Allowed Tools</label>
+            <label className="mb-1 block text-sm font-medium">允许的工具</label>
             <div className="flex flex-wrap gap-1 mb-2">
               {guardrails.allowed_tools.map((tool) => (
                 <span key={tool} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
@@ -476,24 +476,24 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
               ))}
             </div>
             <div className="flex gap-2">
-              <input id="tool-input" className={`flex-1 ${roundedClass} border px-3 py-1.5 text-sm`} placeholder="e.g. Read, Write, Bash" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addAllowedTool((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).value = '' } }} />
-              <button onClick={() => { const el = document.getElementById('tool-input') as HTMLInputElement; addAllowedTool(el.value); el.value = '' }} className={`${roundedLgClass} border px-3 py-1.5 text-sm font-medium`} style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>Add</button>
+              <input id="tool-input" className={`flex-1 ${roundedClass} border px-3 py-1.5 text-sm`} placeholder="例如 Read, Write, Bash" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addAllowedTool((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).value = '' } }} />
+              <button onClick={() => { const el = document.getElementById('tool-input') as HTMLInputElement; addAllowedTool(el.value); el.value = '' }} className={`${roundedLgClass} border px-3 py-1.5 text-sm font-medium`} style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>添加</button>
             </div>
           </div>
           <div className="flex items-center justify-between py-1">
-            <label className="text-sm font-medium">Disable Model Invocation</label>
+            <label className="text-sm font-medium">禁用模型调用</label>
             <button onClick={() => setGuardrails({ ...guardrails, disable_model_invocation: !guardrails.disable_model_invocation })} className="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors" style={{ background: guardrails.disable_model_invocation ? 'var(--accent)' : 'var(--muted)' }}>
               <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${guardrails.disable_model_invocation ? 'translate-x-5' : 'translate-x-0'}`} />
             </button>
           </div>
           <div className="flex items-center justify-between py-1">
-            <label className="text-sm font-medium">User Invocable</label>
+            <label className="text-sm font-medium">用户可调用</label>
             <button onClick={() => setGuardrails({ ...guardrails, user_invocable: !guardrails.user_invocable })} className="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors" style={{ background: guardrails.user_invocable ? 'var(--accent)' : 'var(--muted)' }}>
               <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${guardrails.user_invocable ? 'translate-x-5' : 'translate-x-0'}`} />
             </button>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Escalation</label>
+            <label className="mb-1 block text-sm font-medium">升级策略</label>
             <select value={guardrails.escalation} onChange={(e) => { markUserEdited('guardrails'); setGuardrails({ ...guardrails, escalation: e.target.value as SkillGuardrails['escalation'] }) }} className={`${roundedClass} border px-3 py-2 text-sm ${aiRingClass('guardrails')}`}>
               <option value="ASK_HUMAN">ASK_HUMAN</option>
               <option value="REVIEW">REVIEW</option>
@@ -501,14 +501,14 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Stop Conditions (min 1)</label>
+            <label className="mb-1 block text-sm font-medium">停止条件（至少 1 个）</label>
             {guardrails.stop_conditions.map((sc, i) => (
               <div key={i} className="mb-2 flex gap-2">
-                <input value={sc} onChange={(e) => { markUserEdited('guardrails'); updateStopCondition(i, e.target.value) }} className={`flex-1 ${roundedClass} border px-3 py-1.5 text-sm ${monoDataClass} ${aiRingClass('guardrails')}`} placeholder="Stop condition..." />
+                <input value={sc} onChange={(e) => { markUserEdited('guardrails'); updateStopCondition(i, e.target.value) }} className={`flex-1 ${roundedClass} border px-3 py-1.5 text-sm ${monoDataClass} ${aiRingClass('guardrails')}`} placeholder="停止条件..." />
                 {guardrails.stop_conditions.length > 1 && <button onClick={() => { markUserEdited('guardrails'); removeStopCondition(i) }} className="opacity-40 hover:opacity-100" style={{ color: 'var(--danger)' }}><Trash2 className="h-4 w-4" /></button>}
               </div>
             ))}
-            <button onClick={addStopCondition} className="inline-flex items-center gap-1 text-xs hover:opacity-70" style={{ color: 'var(--muted-foreground)' }}><Plus className="h-3 w-3" /> Add condition</button>
+            <button onClick={addStopCondition} className="inline-flex items-center gap-1 text-xs hover:opacity-70" style={{ color: 'var(--muted-foreground)' }}><Plus className="h-3 w-3" /> 添加条件</button>
           </div>
         </div>
       )}
@@ -516,19 +516,19 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       {/* Tests Tab */}
       {activeTab === 'tests' && (
         <div className="space-y-4">
-          <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Define test cases (minimum 1). Each test has a name, input, and expected output.</p>
+          <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>定义测试用例（至少 1 个）。每个测试包含名称、输入和预期输出。</p>
           {tests.map((test, i) => (
             <div key={i} className={`${roundedClass} border p-3 space-y-2 ${aiRingClass('tests')}`}>
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Test {i + 1}</span>
+                <span className="text-sm font-medium">测试 {i + 1}</span>
                 {tests.length > 1 && <button onClick={() => { markUserEdited('tests'); removeTest(i) }} className="opacity-40 hover:opacity-100" style={{ color: 'var(--danger)' }}><Trash2 className="h-4 w-4" /></button>}
               </div>
-              <input value={test.name} onChange={(e) => { markUserEdited('tests'); updateTest(i, 'name', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-1.5 text-sm ${monoDataClass}`} placeholder="Test name" />
-              <textarea value={test.input} onChange={(e) => { markUserEdited('tests'); updateTest(i, 'input', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-1.5 text-sm font-mono`} rows={2} placeholder="Input" />
-              <textarea value={test.expected_output} onChange={(e) => { markUserEdited('tests'); updateTest(i, 'expected_output', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-1.5 text-sm font-mono`} rows={2} placeholder="Expected output" />
+              <input value={test.name} onChange={(e) => { markUserEdited('tests'); updateTest(i, 'name', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-1.5 text-sm ${monoDataClass}`} placeholder="测试名称" />
+              <textarea value={test.input} onChange={(e) => { markUserEdited('tests'); updateTest(i, 'input', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-1.5 text-sm font-mono`} rows={2} placeholder="输入" />
+              <textarea value={test.expected_output} onChange={(e) => { markUserEdited('tests'); updateTest(i, 'expected_output', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-1.5 text-sm font-mono`} rows={2} placeholder="预期输出" />
             </div>
           ))}
-          <button onClick={addTest} className="inline-flex items-center gap-1 text-sm hover:opacity-70" style={{ color: 'var(--muted-foreground)' }}><Plus className="h-4 w-4" /> Add test case</button>
+          <button onClick={addTest} className="inline-flex items-center gap-1 text-sm hover:opacity-70" style={{ color: 'var(--muted-foreground)' }}><Plus className="h-4 w-4" /> 添加测试用例</button>
         </div>
       )}
 
@@ -536,25 +536,25 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       {activeTab === 'files' && (
         <div className="space-y-4">
           {!skillId ? (
-            <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Save the skill first to manage supporting files.</p>
+            <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>请先保存 Skill 以管理支持文件。</p>
           ) : (
             <>
               <div className="flex gap-2 items-end">
                 <div>
-                  <label className="mb-1 block text-xs font-medium" style={{ color: 'var(--muted-foreground)' }}>Directory</label>
+                  <label className="mb-1 block text-xs font-medium" style={{ color: 'var(--muted-foreground)' }}>目录</label>
                   <select value={newFileDir} onChange={(e) => setNewFileDir(e.target.value)} className={`${roundedClass} border px-2 py-1.5 text-sm`}>
                     {ALLOWED_DIRS.map((d) => <option key={d} value={d}>{d}/</option>)}
                   </select>
                 </div>
                 <div className="flex-1">
-                  <label className="mb-1 block text-xs font-medium" style={{ color: 'var(--muted-foreground)' }}>Filename</label>
-                  <input value={newFileName} onChange={(e) => setNewFileName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleCreateFile())} className={`w-full ${roundedClass} border px-3 py-1.5 text-sm`} placeholder="e.g. rules.md" />
+                  <label className="mb-1 block text-xs font-medium" style={{ color: 'var(--muted-foreground)' }}>文件名</label>
+                  <input value={newFileName} onChange={(e) => setNewFileName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleCreateFile())} className={`w-full ${roundedClass} border px-3 py-1.5 text-sm`} placeholder="例如 rules.md" />
                 </div>
                 <button onClick={handleCreateFile} disabled={fileSaving || !newFileName.trim()} className={`${roundedLgClass} px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50`} style={{ background: 'var(--foreground)' }}>
-                  <Plus className="inline h-4 w-4 mr-1" />Create
+                  <Plus className="inline h-4 w-4 mr-1" />创建
                 </button>
                 <label className={`cursor-pointer ${roundedLgClass} border px-3 py-1.5 text-sm font-medium`} style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>
-                  <Upload className="inline h-4 w-4 mr-1" />Upload
+                  <Upload className="inline h-4 w-4 mr-1" />上传
                   <input type="file" className="hidden" onChange={handleUploadFile} />
                 </label>
               </div>
@@ -581,26 +581,26 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
                       </div>
                     )
                   })}
-                  {files.length === 0 && <p className="text-xs p-2" style={{ color: 'var(--muted-foreground)' }}>No files yet</p>}
+                  {files.length === 0 && <p className="text-xs p-2" style={{ color: 'var(--muted-foreground)' }}>暂无文件</p>}
                 </div>
 
                 <div className={`flex-1 ${roundedClass} border p-2`}>
                   {selectedFile ? (
                     selectedFile.isBinary ? (
-                      <p className="text-sm p-4" style={{ color: 'var(--muted-foreground)' }}>Binary file: {selectedFile.path} ({selectedFile.mime})</p>
+                      <p className="text-sm p-4" style={{ color: 'var(--muted-foreground)' }}>二进制文件：{selectedFile.path} ({selectedFile.mime})</p>
                     ) : (
                       <div className="flex flex-col h-full">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-mono" style={{ color: 'var(--muted-foreground)' }}>{selectedFile.path}</span>
                           <button onClick={handleSaveFile} disabled={fileSaving} className={`${roundedClass} px-3 py-1 text-xs font-medium text-white disabled:opacity-50`} style={{ background: 'var(--foreground)' }}>
-                            {fileSaving ? 'Saving...' : 'Save'}
+                            {fileSaving ? '保存中...' : '保存'}
                           </button>
                         </div>
                         <textarea value={fileContent} onChange={(e) => setFileContent(e.target.value)} className={`flex-1 w-full rounded border px-3 py-2 text-sm font-mono resize-none min-h-[250px]`} />
                       </div>
                     )
                   ) : (
-                    <p className="text-sm p-4" style={{ color: 'var(--muted-foreground)' }}>Select a file to edit</p>
+                    <p className="text-sm p-4" style={{ color: 'var(--muted-foreground)' }}>选择文件进行编辑</p>
                   )}
                 </div>
               </div>
@@ -613,17 +613,17 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       {activeTab === 'enhance' && (
         <div className="space-y-4">
           {!skillId ? (
-            <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Save the skill first to use enhancement features.</p>
+            <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>请先保存 Skill 以使用增强功能。</p>
           ) : (
             <>
               <div>
-                <label className="mb-1 block text-sm font-medium">Instruction (optional)</label>
+                <label className="mb-1 block text-sm font-medium">指令（可选）</label>
                 <textarea
                   value={aiInstruction}
                   onChange={(e) => setAiInstruction(e.target.value)}
                   className={`w-full ${roundedClass} border px-3 py-2 text-sm`}
                   rows={2}
-                  placeholder="e.g. Make the summary more concise, add error handling steps..."
+                  placeholder="例如：让摘要更简洁，添加错误处理步骤..."
                   data-testid="ai-instruction"
                 />
               </div>
@@ -637,8 +637,8 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
                   data-testid="ai-improve-btn"
                 >
                   {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                  Improve
-                </button>
+                  优化
+</button>
                 <button
                   onClick={() => handleAiPropose('fix-lint')}
                   disabled={aiLoading}
@@ -647,7 +647,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
                   data-testid="ai-fix-lint-btn"
                 >
                   {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertCircle className="h-4 w-4" />}
-                  Fix Lint
+                  修复校验
                 </button>
                 <button
                   onClick={() => handleAiPropose('create-supporting-files')}
@@ -657,7 +657,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
                   data-testid="ai-gen-files-btn"
                 >
                   {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <File className="h-4 w-4" />}
-                  Generate Files
+                  生成文件
                 </button>
               </div>
 
@@ -671,7 +671,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
                 <div className="space-y-4" data-testid="ai-preview">
                   {Object.keys(aiChangeSet.skillPatch).length > 0 && (
                     <div className={`${roundedClass} border p-4`}>
-                      <h3 className="text-sm font-semibold mb-2">Proposed Skill Changes</h3>
+                      <h3 className="text-sm font-semibold mb-2">建议的 Skill 变更</h3>
                       <div className="space-y-2">
                         {Object.entries(aiChangeSet.skillPatch).map(([key, value]) => (
                           <div key={key} className="text-sm">
@@ -687,7 +687,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
 
                   {aiChangeSet.fileOps.length > 0 && (
                     <div className={`${roundedClass} border p-4`}>
-                      <h3 className="text-sm font-semibold mb-2">Proposed File Changes</h3>
+                      <h3 className="text-sm font-semibold mb-2">建议的文件变更</h3>
                       <div className="space-y-1">
                         {aiChangeSet.fileOps.map((fop, i) => (
                           <div key={i} className="flex items-center gap-2 text-sm">
@@ -708,7 +708,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
                         <div className="mt-3">
                           <p className="text-xs font-mono mb-1" style={{ color: 'var(--muted-foreground)' }}>{aiPreviewFile}</p>
                           <pre className={`${roundedClass} p-3 text-xs overflow-auto max-h-64`} style={{ background: 'var(--muted)' }} data-testid="ai-file-preview">
-                            {aiChangeSet.fileOps.find((f) => f.path === aiPreviewFile)?.content_text || '(no content)'}
+                            {aiChangeSet.fileOps.find((f) => f.path === aiPreviewFile)?.content_text || '（无内容）'}
                           </pre>
                         </div>
                       )}
@@ -725,7 +725,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
                     <div className={`${roundedClass} p-3 ${aiLintPreview.valid ? 'bg-green-50' : 'bg-amber-50'}`}>
                       <p className={`text-sm font-medium flex items-center gap-2 ${aiLintPreview.valid ? 'text-green-700' : 'text-amber-700'}`}>
                         {aiLintPreview.valid ? <CheckCircle className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
-                        Lint Preview: {aiLintPreview.valid ? 'Passed' : 'Has Issues'}
+                        校验预览：{aiLintPreview.valid ? '通过' : '存在问题'}
                       </p>
                       {!aiLintPreview.valid && (
                         <ul className="mt-2 space-y-1">
@@ -748,20 +748,20 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
                       data-testid="ai-apply-btn"
                     >
                       {aiApplying ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                      {aiApplied ? 'Applied' : 'Apply Changes'}
+                      {aiApplied ? '已应用' : '应用变更'}
                     </button>
                     <button
                       onClick={() => { setAiChangeSet(null); setAiLintPreview(null); setAiPreviewFile(null) }}
                       className={`${roundedLgClass} border px-4 py-2 text-sm font-medium transition-colors`}
                       style={{ borderColor: 'var(--border)', background: 'var(--card)' }}
                     >
-                      Discard
+                      放弃
                     </button>
                   </div>
 
                   {aiApplied && (
                     <div className={`${roundedLgClass} p-3 text-sm flex items-center gap-2`} style={{ background: 'var(--success-light)', color: 'var(--success)' }}>
-                      <CheckCircle className="h-4 w-4" /> Changes applied successfully. Reloading...
+                      <CheckCircle className="h-4 w-4" /> 变更已成功应用，正在刷新...
                     </div>
                   )}
                 </div>
@@ -774,17 +774,17 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       {/* Export Tab */}
       {activeTab === 'export' && (
         <div className="space-y-4">
-          <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Run lint check before exporting. All validations must pass.</p>
+          <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>导出前请先运行校验检查，所有验证必须通过。</p>
           <button
             onClick={handleLint}
             className={`${roundedLgClass} px-4 py-2 text-sm font-medium text-white transition-colors`}
             style={{ background: 'var(--foreground)' }}
           >
-            Run Lint Check
+            运行校验
           </button>
           {lintErrors.length > 0 && (
             <div className={`${roundedLgClass} p-4`} style={{ background: 'var(--danger-light)' }}>
-              <p className="font-medium mb-2 flex items-center gap-2 text-sm" style={{ color: 'var(--danger)' }}><AlertCircle className="h-4 w-4" /> Lint Failed</p>
+              <p className="font-medium mb-2 flex items-center gap-2 text-sm" style={{ color: 'var(--danger)' }}><AlertCircle className="h-4 w-4" /> 校验失败</p>
               <ul className="space-y-1">
                 {lintErrors.map((e, i) => (
                   <li key={i} className="text-sm" style={{ color: 'var(--danger)' }}>
@@ -796,17 +796,17 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
           )}
           {lintPassed && (
             <div className={`${roundedLgClass} p-4`} style={{ background: 'var(--success-light)' }}>
-              <p className="font-medium flex items-center gap-2 text-sm" style={{ color: 'var(--success)' }}><CheckCircle className="h-4 w-4" /> Lint Passed</p>
+              <p className="font-medium flex items-center gap-2 text-sm" style={{ color: 'var(--success)' }}><CheckCircle className="h-4 w-4" /> 校验通过</p>
               {isEdit && (
                 <div className="mt-3 flex gap-2">
                   <a href={`/api/skills/${skillId}/export.zip`} className={`${roundedLgClass} px-4 py-2 text-sm font-medium text-white`} style={{ background: 'var(--accent)' }}>
-                    Export ZIP
+                    导出 ZIP
                   </a>
                   <a href={`/api/skills/${skillId}/export.md`} className={`${roundedLgClass} border px-4 py-2 text-sm font-medium`} style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>
-                    Export MD
+                    导出 MD
                   </a>
                   <a href={`/api/skills/${skillId}/export.json`} className={`${roundedLgClass} border px-4 py-2 text-sm font-medium`} style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>
-                    Export JSON
+                    导出 JSON
                   </a>
                 </div>
               )}
@@ -835,14 +835,14 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
             className={`${roundedLgClass} px-6 py-2.5 text-sm font-medium text-white disabled:opacity-50 transition-all active:scale-[0.97]`}
             style={{ background: 'var(--accent)' }}
           >
-            {saving ? 'Saving...' : isEdit ? 'Update Skill' : 'Create Skill'}
+            {saving ? '保存中...' : isEdit ? '更新 Skill' : '创建 Skill'}
           </button>
           <button
             onClick={() => router.back()}
             className={`${roundedLgClass} border px-6 py-2.5 text-sm font-medium transition-colors`}
             style={{ borderColor: 'var(--border)', background: 'var(--card)' }}
           >
-            Cancel
+            取消
           </button>
         </div>
       </div>

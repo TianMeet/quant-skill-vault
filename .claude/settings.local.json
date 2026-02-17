@@ -6,7 +6,8 @@
       "Bash(npx next build:*)",
       "Bash(wc:*)",
       "Bash(npx tsc:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(grep:*)"
     ]
   }
 }

@@ -12,7 +12,7 @@ export function Nav() {
   const { toggle } = useChatPanel()
 
   const links = [
-    { href: '/skills', label: 'Skills', match: (p: string) => p === '/skills' },
+    { href: '/skills', label: '技能列表', match: (p: string) => p === '/skills' },
   ]
 
   return (
@@ -33,7 +33,7 @@ export function Nav() {
             >
               <Layers className="h-4 w-4" />
             </div>
-            <span className="text-[15px] font-semibold tracking-tight">Skill Vault</span>
+            <span className="text-[15px] font-semibold tracking-tight">Skill 管理平台</span>
           </Link>
           <nav className="flex items-center gap-1">
             {links.map((link) => (
@@ -63,7 +63,7 @@ export function Nav() {
             aria-label="打开 AI 聊天面板"
           >
             <MessageSquarePlus className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-            <span className="hidden sm:inline">AI Chat</span>
+            <span className="hidden sm:inline">AI 对话</span>
           </button>
           <Link
             href="/skills/new"
@@ -71,7 +71,7 @@ export function Nav() {
             style={{ background: 'var(--accent)' }}
           >
             <Plus className="h-3.5 w-3.5" />
-            New Skill
+            新建 Skill
           </Link>
         </div>
       </div>

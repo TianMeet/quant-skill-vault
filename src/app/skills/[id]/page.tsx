@@ -66,7 +66,7 @@ export default function SkillDetailPage() {
   }
 
   async function handleDelete() {
-    if (!confirm('Delete this skill?')) return
+    if (!confirm('确定删除该 Skill？')) return
     setDeleting(true)
     await fetch(`/api/skills/${params.id}`, { method: 'DELETE' })
     router.push('/skills')
@@ -109,7 +109,7 @@ export default function SkillDetailPage() {
   if (!skill) {
     return (
       <div className="mx-auto max-w-4xl px-6 py-8">
-        <p className="text-sm" style={{ color: 'var(--danger)' }}>Skill not found</p>
+        <p className="text-sm" style={{ color: 'var(--danger)' }}>Skill 未找到</p>
       </div>
     )
   }
@@ -123,7 +123,7 @@ export default function SkillDetailPage() {
         style={{ color: 'var(--muted-foreground)' }}
       >
         <ChevronLeft className="h-3.5 w-3.5" />
-        Back to Skills
+        返回列表
       </Link>
 
       {/* Header */}
@@ -151,7 +151,7 @@ export default function SkillDetailPage() {
             className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium border transition-colors"
             style={{ borderColor: 'var(--border)', background: 'var(--card)' }}
           >
-            <Edit className="h-3.5 w-3.5" /> Edit
+            <Edit className="h-3.5 w-3.5" /> 编辑
           </Link>
           <button
             onClick={handleDelete}
@@ -159,7 +159,7 @@ export default function SkillDetailPage() {
             className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors disabled:opacity-50"
             style={{ background: 'var(--danger-light)', color: 'var(--danger)' }}
           >
-            <Trash2 className="h-3.5 w-3.5" /> Delete
+            <Trash2 className="h-3.5 w-3.5" /> 删除
           </button>
         </div>
       </div>
@@ -169,7 +169,7 @@ export default function SkillDetailPage() {
         {/* Purpose */}
         <section className="card p-5">
           <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--muted-foreground)' }}>
-            Purpose
+            用途
           </h2>
           <p className="text-sm leading-relaxed">{skill.summary}</p>
         </section>
@@ -178,13 +178,13 @@ export default function SkillDetailPage() {
         <div className="grid gap-4 sm:grid-cols-2">
           <section className="card p-5">
             <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--muted-foreground)' }}>
-              Inputs
+              输入
             </h2>
             <p className="text-sm whitespace-pre-wrap leading-relaxed">{skill.inputs}</p>
           </section>
           <section className="card p-5">
             <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--muted-foreground)' }}>
-              Outputs
+              输出
             </h2>
             <p className="text-sm whitespace-pre-wrap leading-relaxed">{skill.outputs}</p>
           </section>
@@ -193,7 +193,7 @@ export default function SkillDetailPage() {
         {/* Workflow */}
         <section className="card p-5">
           <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--muted-foreground)' }}>
-            Workflow
+            工作流程
           </h2>
           <ol className="space-y-2">
             {(skill.steps as string[]).map((step, i) => (
@@ -214,7 +214,7 @@ export default function SkillDetailPage() {
         {skill.risks && (
           <section className="card p-5">
             <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--muted-foreground)' }}>
-              Risks
+              风险
             </h2>
             <p className="text-sm whitespace-pre-wrap leading-relaxed">{skill.risks}</p>
           </section>
@@ -225,7 +225,7 @@ export default function SkillDetailPage() {
           <div className="flex items-center gap-2 mb-3">
             <Zap className="h-3.5 w-3.5" style={{ color: 'var(--warning)' }} />
             <h2 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--muted-foreground)' }}>
-              Triggers
+              触发词
             </h2>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -246,32 +246,32 @@ export default function SkillDetailPage() {
           <div className="flex items-center gap-2 mb-3">
             <Shield className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
             <h2 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--muted-foreground)' }}>
-              Guardrails
+              安全护栏
             </h2>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-lg p-3" style={{ background: 'var(--muted)' }}>
-              <p className="text-xs font-medium mb-1" style={{ color: 'var(--muted-foreground)' }}>Escalation</p>
+              <p className="text-xs font-medium mb-1" style={{ color: 'var(--muted-foreground)' }}>升级策略</p>
               <p className="text-sm font-medium">{skill.guardrails.escalation}</p>
             </div>
             <div className="rounded-lg p-3" style={{ background: 'var(--muted)' }}>
-              <p className="text-xs font-medium mb-1" style={{ color: 'var(--muted-foreground)' }}>User Invocable</p>
-              <p className="text-sm font-medium">{skill.guardrails.user_invocable ? 'Yes' : 'No'}</p>
+              <p className="text-xs font-medium mb-1" style={{ color: 'var(--muted-foreground)' }}>用户可调用</p>
+              <p className="text-sm font-medium">{skill.guardrails.user_invocable ? '是' : '否'}</p>
             </div>
             <div className="rounded-lg p-3" style={{ background: 'var(--muted)' }}>
-              <p className="text-xs font-medium mb-1" style={{ color: 'var(--muted-foreground)' }}>Model Invocation</p>
-              <p className="text-sm font-medium">{skill.guardrails.disable_model_invocation ? 'Disabled' : 'Enabled'}</p>
+              <p className="text-xs font-medium mb-1" style={{ color: 'var(--muted-foreground)' }}>模型调用</p>
+              <p className="text-sm font-medium">{skill.guardrails.disable_model_invocation ? '已禁用' : '已启用'}</p>
             </div>
             {skill.guardrails.allowed_tools.length > 0 && (
               <div className="rounded-lg p-3" style={{ background: 'var(--muted)' }}>
-                <p className="text-xs font-medium mb-1" style={{ color: 'var(--muted-foreground)' }}>Allowed Tools</p>
+                <p className="text-xs font-medium mb-1" style={{ color: 'var(--muted-foreground)' }}>允许的工具</p>
                 <p className="text-sm font-medium">{skill.guardrails.allowed_tools.join(', ')}</p>
               </div>
             )}
           </div>
           {skill.guardrails.stop_conditions.length > 0 && (
             <div className="mt-3">
-              <p className="text-xs font-medium mb-2" style={{ color: 'var(--muted-foreground)' }}>Stop Conditions</p>
+              <p className="text-xs font-medium mb-2" style={{ color: 'var(--muted-foreground)' }}>停止条件</p>
               <ul className="space-y-1">
                 {skill.guardrails.stop_conditions.map((sc, i) => (
                   <li key={i} className="flex items-center gap-2 text-sm">
@@ -289,7 +289,7 @@ export default function SkillDetailPage() {
           <div className="flex items-center gap-2 mb-3">
             <FlaskConical className="h-3.5 w-3.5" style={{ color: 'var(--success)' }} />
             <h2 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--muted-foreground)' }}>
-              Tests
+              测试
             </h2>
           </div>
           <div className="space-y-3">
@@ -298,11 +298,11 @@ export default function SkillDetailPage() {
                 <p className="text-sm font-medium mb-2">{t.name}</p>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <div>
-                    <p className="text-xs mb-1" style={{ color: 'var(--muted-foreground)' }}>Input</p>
+                    <p className="text-xs mb-1" style={{ color: 'var(--muted-foreground)' }}>输入</p>
                     <code className="text-xs font-mono rounded px-2 py-1 block" style={{ background: 'var(--card)' }}>{t.input}</code>
                   </div>
                   <div>
-                    <p className="text-xs mb-1" style={{ color: 'var(--muted-foreground)' }}>Expected</p>
+                    <p className="text-xs mb-1" style={{ color: 'var(--muted-foreground)' }}>预期输出</p>
                     <code className="text-xs font-mono rounded px-2 py-1 block" style={{ background: 'var(--card)' }}>{t.expected_output}</code>
                   </div>
                 </div>
@@ -315,7 +315,7 @@ export default function SkillDetailPage() {
         {files.length > 0 && (
           <section className="card p-5">
             <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--muted-foreground)' }}>
-              Supporting Files
+              支持文件
             </h2>
             <div className="space-y-1.5">
               {files.map((f) => (
@@ -340,20 +340,20 @@ export default function SkillDetailPage() {
         {/* Export Section */}
         <section className="card p-5">
           <h2 className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--muted-foreground)' }}>
-            Export
+            导出
           </h2>
           <button
             onClick={handleLint}
             className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors"
             style={{ background: 'var(--foreground)' }}
           >
-            Run Lint Check
+            运行校验
           </button>
 
           {lintErrors.length > 0 && (
             <div className="mt-4 rounded-lg p-4" style={{ background: 'var(--danger-light)' }}>
               <p className="font-medium text-sm flex items-center gap-2 mb-2" style={{ color: 'var(--danger)' }}>
-                <AlertCircle className="h-4 w-4" /> Lint Failed
+                <AlertCircle className="h-4 w-4" /> 校验失败
               </p>
               <ul className="space-y-1">
                 {lintErrors.map((e, i) => (
@@ -370,7 +370,7 @@ export default function SkillDetailPage() {
             <div className="mt-4 space-y-3">
               <div className="rounded-lg p-3 flex items-center gap-2" style={{ background: 'var(--success-light)' }}>
                 <CheckCircle className="h-4 w-4" style={{ color: 'var(--success)' }} />
-                <p className="text-sm font-medium" style={{ color: 'var(--success)' }}>Lint Passed</p>
+                <p className="text-sm font-medium" style={{ color: 'var(--success)' }}>校验通过</p>
               </div>
               <div className="flex gap-2">
                 <a
@@ -379,21 +379,21 @@ export default function SkillDetailPage() {
                   className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white"
                   style={{ background: 'var(--accent)' }}
                 >
-                  <Download className="h-3.5 w-3.5" /> Export ZIP
+                  <Download className="h-3.5 w-3.5" /> 导出 ZIP
                 </a>
                 <a
                   href={`/api/skills/${skill.id}/export.md`}
                   className="rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
                   style={{ borderColor: 'var(--border)', background: 'var(--card)' }}
                 >
-                  Export MD
+                  导出 MD
                 </a>
                 <a
                   href={`/api/skills/${skill.id}/export.json`}
                   className="rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
                   style={{ borderColor: 'var(--border)', background: 'var(--card)' }}
                 >
-                  Export JSON
+                  导出 JSON
                 </a>
               </div>
             </div>
@@ -403,7 +403,7 @@ export default function SkillDetailPage() {
 
       {/* Footer meta */}
       <div className="mt-6 text-xs" style={{ color: 'var(--muted-foreground)' }}>
-        Created {new Date(skill.createdAt).toLocaleString()} · Updated {new Date(skill.updatedAt).toLocaleString()}
+        创建于 {new Date(skill.createdAt).toLocaleString()} · 更新于 {new Date(skill.updatedAt).toLocaleString()}
       </div>
     </div>
   )

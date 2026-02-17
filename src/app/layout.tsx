@@ -6,7 +6,7 @@ import { ChatPanel } from "@/components/chat-panel";
 import { ThemeProvider } from "@/lib/theme-context";
 
 export const metadata: Metadata = {
-  title: "Skill Vault",
+  title: "Skill 管理平台",
   description: "Skill 协议管理平台",
 };
 
