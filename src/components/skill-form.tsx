@@ -1,9 +1,12 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import type { SkillData, SkillTestCase, SkillGuardrails } from '@/lib/types'
+import type { SkillData, SkillGuardrails } from '@/lib/types'
 import { useSkillStore } from '@/lib/stores/skill-store'
+import { FormField } from '@/components/ui/form-field'
+import { Input, type FieldVisualState } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Plus, Trash2, AlertCircle, CheckCircle, Upload, File, Wand2, Loader2, Eye } from 'lucide-react'
 
 interface SkillFormProps {
@@ -30,8 +33,8 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   const {
     title, summary, inputs, outputs, steps, risks, triggers, guardrails, tests, tags,
     activeTab, saving, error, lintErrors, lintPassed,
-    activeField, aiFilledFields,
-    setField, setUIField, markUserEdited, setActiveField,
+    activeField, aiFilledFields, userEdited,
+    setField, setUIField, markUserEdited,
     addStep, removeStep, updateStep,
     addTrigger, removeTrigger, updateTrigger,
     addTest, removeTest, updateTest,
@@ -48,11 +51,9 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   }, [initialData, initFromData])
 
   // AI 高亮样式 helper
-  const aiRingClass = (field: string) => {
-    if (activeField === field) return 'ring-2 ring-purple-500 transition-all duration-300'
-    if (aiFilledFields.has(field)) return 'ring-2 ring-purple-500 transition-all duration-300'
-    return 'transition-all duration-300'
-  }
+  const isAiField = (field: string) => activeField === field || aiFilledFields.has(field)
+  const aiRingClass = (field: string) =>
+    isAiField(field) ? 'ring-2 ring-[var(--input-ai)] transition-all duration-300' : 'transition-all duration-300'
 
   // industrial variant 的基础样式
   const roundedClass = isIndustrial ? 'rounded-none' : 'rounded-md'
@@ -85,15 +86,15 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
 
   const ALLOWED_DIRS = ['references', 'examples', 'scripts', 'assets', 'templates']
 
-  useEffect(() => {
-    if (skillId) loadFiles()
-  }, [skillId])
-
-  async function loadFiles() {
+  const loadFiles = useCallback(async () => {
     if (!skillId) return
     const res = await fetch(`/api/skills/${skillId}/files`)
     if (res.ok) setFiles(await res.json())
-  }
+  }, [skillId])
+
+  useEffect(() => {
+    if (skillId) loadFiles()
+  }, [skillId, loadFiles])
 
   async function handleCreateFile() {
     if (!skillId || !newFileName.trim()) return
@@ -320,6 +321,36 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     }
   }, [title, summary, steps, triggers, guardrails, tests])
 
+  const filledSteps = useMemo(() => steps.filter((s) => s.trim()).length, [steps])
+  const filledTriggers = useMemo(() => triggers.filter((t) => t.trim()).length, [triggers])
+  const filledStopConditions = useMemo(() => guardrails.stop_conditions.filter((s) => s.trim()).length, [guardrails.stop_conditions])
+  const completeTests = useMemo(
+    () => tests.filter((t) => t.name.trim() && t.input.trim() && t.expected_output.trim()).length,
+    [tests],
+  )
+
+  const fieldErrors = useMemo(() => {
+    const errors: Record<string, string> = {}
+    if (!title.trim()) errors.title = '标题不能为空'
+    if (!summary.trim()) errors.summary = '摘要不能为空'
+    if (filledSteps < 3) errors.steps = `步骤至少填写 3 条（当前 ${filledSteps}）`
+    if (filledTriggers < 3) errors.triggers = `触发词至少填写 3 条（当前 ${filledTriggers}）`
+    if (!['REVIEW', 'BLOCK', 'ASK_HUMAN'].includes(guardrails.escalation) || filledStopConditions < 1) {
+      errors.guardrails = '至少填写 1 个停止条件，并设置有效升级策略'
+    }
+    if (completeTests < 1) errors.tests = '至少填写 1 个完整测试用例（名称、输入、预期输出）'
+    return errors
+  }, [title, summary, guardrails.escalation, filledSteps, filledTriggers, filledStopConditions, completeTests])
+
+  const shouldShowFieldError = (field: string) => showValidation || userEdited.has(field)
+  const getFieldError = (field: string) => (shouldShowFieldError(field) ? fieldErrors[field] : undefined)
+  const getFieldState = (field: string, done = false): FieldVisualState => {
+    if (getFieldError(field)) return 'error'
+    if (isAiField(field)) return 'ai'
+    if (done) return 'success'
+    return 'default'
+  }
+
   const tabStatus: Record<string, boolean | undefined> = useMemo(() => {
     const c = requiredStatus.checks
     return {
@@ -393,65 +424,194 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       {/* Author Tab */}
       {activeTab === 'author' && (
         <div className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium">标题</label>
-            <input value={title} onChange={(e) => { markUserEdited('title'); setField('title', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-2.5 text-base font-medium ${monoDataClass} ${aiRingClass('title')}`} placeholder="Skill 标题" />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium">摘要</label>
-            <textarea value={summary} onChange={(e) => { markUserEdited('summary'); setField('summary', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-2 text-sm ${monoDataClass} ${aiRingClass('summary')}`} rows={2} placeholder="简要描述该 Skill 的功能" />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium">标签</label>
-            <div className={`flex flex-wrap gap-1 mb-2 ${aiRingClass('tags')}`}>
+          <FormField
+            label="标题"
+            required
+            hint="建议 6-40 个字符，便于检索和复用。"
+            error={getFieldError('title')}
+            count={{ current: title.length, recommended: 40 }}
+            status={getFieldState('title', title.trim().length > 0)}
+          >
+            <Input
+              value={title}
+              onChange={(e) => { markUserEdited('title'); setField('title', e.target.value) }}
+              state={getFieldState('title', title.trim().length > 0)}
+              className={`w-full ${roundedClass} text-base font-medium ${monoDataClass}`}
+              placeholder="Skill 标题"
+            />
+          </FormField>
+
+          <FormField
+            label="摘要"
+            required
+            hint="一行解释这个 Skill 解决什么问题。"
+            error={getFieldError('summary')}
+            count={{ current: summary.length, recommended: 120 }}
+            status={getFieldState('summary', summary.trim().length > 0)}
+          >
+            <Textarea
+              value={summary}
+              onChange={(e) => { markUserEdited('summary'); setField('summary', e.target.value) }}
+              state={getFieldState('summary', summary.trim().length > 0)}
+              className={`w-full ${roundedClass} ${monoDataClass} min-h-[90px]`}
+              rows={2}
+              placeholder="简要描述该 Skill 的功能"
+            />
+          </FormField>
+
+          <FormField
+            label="标签"
+            hint="输入后按回车或点击添加。"
+            count={{ current: tags.length }}
+            status={isAiField('tags') ? 'ai' : 'default'}
+          >
+            <div
+              className={`mb-2 flex min-h-[42px] flex-wrap gap-1 border border-dashed p-2 ${roundedClass} ${aiRingClass('tags')}`}
+              style={{ borderColor: 'var(--input-border-hover)', background: 'var(--muted)' }}
+            >
+              {tags.length === 0 && (
+                <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>暂无标签</span>
+              )}
               {tags.map((tag) => (
-                <span key={tag} className={`inline-flex items-center gap-1 ${roundedClass} px-2 py-0.5 text-xs font-medium`} style={{ background: 'var(--muted)', color: 'var(--muted-foreground)' }}>
+                <span key={tag} className={`inline-flex items-center gap-1 ${roundedClass} px-2 py-0.5 text-xs font-medium`} style={{ background: 'var(--card)', color: 'var(--muted-foreground)' }}>
                   {tag}
                   <button onClick={() => removeTag(tag)} className="opacity-50 hover:opacity-100">&times;</button>
                 </span>
               ))}
             </div>
             <div className="flex gap-2">
-              <input value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())} className={`flex-1 ${roundedClass} border px-3 py-1.5 text-sm`} placeholder="添加标签..." />
+              <Input
+                value={tagInput}
+                density="compact"
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
+                state={tagInput.trim() ? 'success' : 'default'}
+                className={`flex-1 ${roundedClass}`}
+                placeholder="添加标签..."
+              />
               <button onClick={handleAddTag} className={`${roundedLgClass} border px-3 py-1.5 text-sm font-medium`} style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>添加</button>
             </div>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium">输入 (Markdown)</label>
-            <textarea value={inputs} onChange={(e) => { markUserEdited('inputs'); setField('inputs', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-2 text-sm font-mono ${aiRingClass('inputs')}`} rows={3} />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium">输出 (Markdown)</label>
-            <textarea value={outputs} onChange={(e) => { markUserEdited('outputs'); setField('outputs', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-2 text-sm font-mono ${aiRingClass('outputs')}`} rows={3} />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium">步骤 (3-7)</label>
-            {steps.map((step, i) => (
-              <div key={i} className="mb-2 flex gap-2">
-                <span className="mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-mono font-medium" style={{ background: 'var(--muted)', color: 'var(--muted-foreground)' }}>{i + 1}</span>
-                <input value={step} onChange={(e) => { markUserEdited('steps'); updateStep(i, e.target.value) }} className={`flex-1 ${roundedLgClass} border px-3 py-1.5 text-sm ${monoDataClass} ${aiRingClass('steps')}`} style={{ borderColor: 'var(--border)', background: 'var(--card)' }} placeholder={`步骤 ${i + 1}`} />
-                {steps.length > 3 && <button onClick={() => { markUserEdited('steps'); removeStep(i) }} className="opacity-40 hover:opacity-100" style={{ color: 'var(--danger)' }}><Trash2 className="h-4 w-4" /></button>}
-              </div>
-            ))}
+          </FormField>
+
+          <FormField
+            label="输入 (Markdown)"
+            hint="说明调用方会提供什么输入。"
+            count={{ current: inputs.length, recommended: 220 }}
+            status={getFieldState('inputs', inputs.trim().length > 0)}
+          >
+            <Textarea
+              value={inputs}
+              onChange={(e) => { markUserEdited('inputs'); setField('inputs', e.target.value) }}
+              state={getFieldState('inputs', inputs.trim().length > 0)}
+              className={`w-full ${roundedClass} min-h-[120px] font-mono`}
+              rows={4}
+            />
+          </FormField>
+
+          <FormField
+            label="输出 (Markdown)"
+            hint="说明交付格式、边界和质量要求。"
+            count={{ current: outputs.length, recommended: 220 }}
+            status={getFieldState('outputs', outputs.trim().length > 0)}
+          >
+            <Textarea
+              value={outputs}
+              onChange={(e) => { markUserEdited('outputs'); setField('outputs', e.target.value) }}
+              state={getFieldState('outputs', outputs.trim().length > 0)}
+              className={`w-full ${roundedClass} min-h-[120px] font-mono`}
+              rows={4}
+            />
+          </FormField>
+
+          <FormField
+            label="步骤 (3-7)"
+            required
+            hint="每步建议是可执行动作，不要过于抽象。"
+            error={getFieldError('steps')}
+            count={{ current: filledSteps, recommended: 3 }}
+            status={getFieldState('steps', filledSteps >= 3)}
+          >
+            {steps.map((step, i) => {
+              const stepFilled = step.trim().length > 0
+              const stepState: FieldVisualState =
+                !stepFilled && shouldShowFieldError('steps')
+                  ? 'error'
+                  : isAiField('steps')
+                    ? 'ai'
+                    : stepFilled
+                      ? 'success'
+                      : 'default'
+              return (
+                <div key={i} className="mb-2 flex gap-2">
+                  <span className="mt-2 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-mono font-medium" style={{ background: 'var(--muted)', color: 'var(--muted-foreground)' }}>{i + 1}</span>
+                  <Input
+                    value={step}
+                    density="compact"
+                    onChange={(e) => { markUserEdited('steps'); updateStep(i, e.target.value) }}
+                    state={stepState}
+                    className={`flex-1 ${roundedLgClass} ${monoDataClass}`}
+                    placeholder={`步骤 ${i + 1}`}
+                  />
+                  {steps.length > 3 && <button onClick={() => { markUserEdited('steps'); removeStep(i) }} className="opacity-40 hover:opacity-100" style={{ color: 'var(--danger)' }}><Trash2 className="h-4 w-4" /></button>}
+                </div>
+              )
+            })}
             {steps.length < 7 && <button onClick={addStep} className="inline-flex items-center gap-1 text-xs hover:opacity-70" style={{ color: 'var(--muted-foreground)' }}><Plus className="h-3 w-3" /> 添加步骤</button>}
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium">风险 (Markdown)</label>
-            <textarea value={risks} onChange={(e) => { markUserEdited('risks'); setField('risks', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-2 text-sm font-mono ${aiRingClass('risks')}`} rows={3} />
-          </div>
+          </FormField>
+
+          <FormField
+            label="风险 (Markdown)"
+            hint="可填写失败模式、误用风险与缓解方式。"
+            count={{ current: risks.length, recommended: 180 }}
+            status={getFieldState('risks', risks.trim().length > 0)}
+          >
+            <Textarea
+              value={risks}
+              onChange={(e) => { markUserEdited('risks'); setField('risks', e.target.value) }}
+              state={getFieldState('risks', risks.trim().length > 0)}
+              className={`w-full ${roundedClass} min-h-[120px] font-mono`}
+              rows={4}
+            />
+          </FormField>
         </div>
       )}
 
       {/* Triggers Tab */}
       {activeTab === 'triggers' && (
         <div className="space-y-4">
-          <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>触发短语将包含在导出描述中（用双引号包裹）。至少需要 3 个。</p>
-          {triggers.map((trigger, i) => (
-            <div key={i} className="flex gap-2">
-              <input value={trigger} onChange={(e) => { markUserEdited('triggers'); updateTrigger(i, e.target.value) }} className={`flex-1 ${roundedLgClass} border px-3 py-2 text-sm ${monoDataClass} ${aiRingClass('triggers')}`} style={{ borderColor: 'var(--border)', background: 'var(--card)' }} placeholder={`触发短语 ${i + 1}`} />
-              {triggers.length > 3 && <button onClick={() => { markUserEdited('triggers'); removeTrigger(i) }} className="opacity-40 hover:opacity-100" style={{ color: 'var(--danger)' }}><Trash2 className="h-4 w-4" /></button>}
-            </div>
-          ))}
+          <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>触发短语将包含在导出描述中（用双引号包裹）。建议每条都尽量贴近真实用户表达。</p>
+          <FormField
+            label="触发短语"
+            required
+            hint="至少填写 3 条。"
+            error={getFieldError('triggers')}
+            count={{ current: filledTriggers, recommended: 3 }}
+            status={getFieldState('triggers', filledTriggers >= 3)}
+          >
+            {triggers.map((trigger, i) => {
+              const triggerFilled = trigger.trim().length > 0
+              const triggerState: FieldVisualState =
+                !triggerFilled && shouldShowFieldError('triggers')
+                  ? 'error'
+                  : isAiField('triggers')
+                    ? 'ai'
+                    : triggerFilled
+                      ? 'success'
+                      : 'default'
+              return (
+                <div key={i} className="mb-2 flex gap-2">
+                  <Input
+                    value={trigger}
+                    onChange={(e) => { markUserEdited('triggers'); updateTrigger(i, e.target.value) }}
+                    state={triggerState}
+                    className={`flex-1 ${roundedLgClass} ${monoDataClass}`}
+                    placeholder={`触发短语 ${i + 1}`}
+                  />
+                  {triggers.length > 3 && <button onClick={() => { markUserEdited('triggers'); removeTrigger(i) }} className="opacity-40 hover:opacity-100" style={{ color: 'var(--danger)' }}><Trash2 className="h-4 w-4" /></button>}
+                </div>
+              )
+            })}
+          </FormField>
           <button onClick={addTrigger} className="inline-flex items-center gap-1 text-sm hover:opacity-70" style={{ color: 'var(--muted-foreground)' }}><Plus className="h-4 w-4" /> 添加触发词</button>
           {triggers.filter(Boolean).length >= 3 && (
             <div className={`mt-4 ${roundedLgClass} p-3 text-sm`} style={{ background: 'var(--muted)' }}>
@@ -465,21 +625,25 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       {/* Guardrails Tab */}
       {activeTab === 'guardrails' && (
         <div className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium">允许的工具</label>
+          <FormField
+            label="允许的工具"
+            hint="限制可调用工具可以降低风险。"
+            count={{ current: guardrails.allowed_tools.length }}
+            status={guardrails.allowed_tools.length > 0 ? 'success' : 'default'}
+          >
             <div className="flex flex-wrap gap-1 mb-2">
               {guardrails.allowed_tools.map((tool) => (
-                <span key={tool} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                <span key={tool} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs" style={{ background: 'var(--accent-light)', color: 'var(--accent)' }}>
                   {tool}
-                  <button onClick={() => removeAllowedTool(tool)} className="text-blue-400 hover:text-blue-600">&times;</button>
+                  <button onClick={() => removeAllowedTool(tool)} className="opacity-60 hover:opacity-100">&times;</button>
                 </span>
               ))}
             </div>
             <div className="flex gap-2">
-              <input id="tool-input" className={`flex-1 ${roundedClass} border px-3 py-1.5 text-sm`} placeholder="例如 Read, Write, Bash" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addAllowedTool((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).value = '' } }} />
+              <Input id="tool-input" density="compact" className={`flex-1 ${roundedClass}`} placeholder="例如 Read, Write, Bash" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addAllowedTool((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).value = '' } }} />
               <button onClick={() => { const el = document.getElementById('tool-input') as HTMLInputElement; addAllowedTool(el.value); el.value = '' }} className={`${roundedLgClass} border px-3 py-1.5 text-sm font-medium`} style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>添加</button>
             </div>
-          </div>
+          </FormField>
           <div className="flex items-center justify-between py-1">
             <label className="text-sm font-medium">禁用模型调用</label>
             <button onClick={() => setGuardrails({ ...guardrails, disable_model_invocation: !guardrails.disable_model_invocation })} className="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors" style={{ background: guardrails.disable_model_invocation ? 'var(--accent)' : 'var(--muted)' }}>
@@ -492,24 +656,41 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
               <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${guardrails.user_invocable ? 'translate-x-5' : 'translate-x-0'}`} />
             </button>
           </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium">升级策略</label>
-            <select value={guardrails.escalation} onChange={(e) => { markUserEdited('guardrails'); setGuardrails({ ...guardrails, escalation: e.target.value as SkillGuardrails['escalation'] }) }} className={`${roundedClass} border px-3 py-2 text-sm ${aiRingClass('guardrails')}`}>
+          <FormField
+            label="升级策略"
+            required
+            error={getFieldError('guardrails')}
+            status={getFieldState('guardrails', filledStopConditions >= 1)}
+          >
+            <select value={guardrails.escalation} onChange={(e) => { markUserEdited('guardrails'); setGuardrails({ ...guardrails, escalation: e.target.value as SkillGuardrails['escalation'] }) }} className={`h-10 w-full ${roundedClass} border border-[var(--input-border)] bg-[var(--input-bg)] px-3 py-2 text-sm shadow-[var(--shadow-sm)] transition-colors focus-visible:border-[var(--input-ring)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--input-ring)] ${aiRingClass('guardrails')}`}>
               <option value="ASK_HUMAN">ASK_HUMAN</option>
               <option value="REVIEW">REVIEW</option>
               <option value="BLOCK">BLOCK</option>
             </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium">停止条件（至少 1 个）</label>
+          </FormField>
+          <FormField
+            label="停止条件"
+            required
+            hint="至少填写 1 条，明确停止触发点。"
+            error={getFieldError('guardrails')}
+            count={{ current: filledStopConditions, recommended: 1 }}
+            status={getFieldState('guardrails', filledStopConditions >= 1)}
+          >
             {guardrails.stop_conditions.map((sc, i) => (
               <div key={i} className="mb-2 flex gap-2">
-                <input value={sc} onChange={(e) => { markUserEdited('guardrails'); updateStopCondition(i, e.target.value) }} className={`flex-1 ${roundedClass} border px-3 py-1.5 text-sm ${monoDataClass} ${aiRingClass('guardrails')}`} placeholder="停止条件..." />
+                <Input
+                  value={sc}
+                  density="compact"
+                  onChange={(e) => { markUserEdited('guardrails'); updateStopCondition(i, e.target.value) }}
+                  state={!sc.trim() && shouldShowFieldError('guardrails') ? 'error' : getFieldState('guardrails', sc.trim().length > 0)}
+                  className={`flex-1 ${roundedClass} ${monoDataClass}`}
+                  placeholder="停止条件..."
+                />
                 {guardrails.stop_conditions.length > 1 && <button onClick={() => { markUserEdited('guardrails'); removeStopCondition(i) }} className="opacity-40 hover:opacity-100" style={{ color: 'var(--danger)' }}><Trash2 className="h-4 w-4" /></button>}
               </div>
             ))}
             <button onClick={addStopCondition} className="inline-flex items-center gap-1 text-xs hover:opacity-70" style={{ color: 'var(--muted-foreground)' }}><Plus className="h-3 w-3" /> 添加条件</button>
-          </div>
+          </FormField>
         </div>
       )}
 
@@ -517,15 +698,48 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       {activeTab === 'tests' && (
         <div className="space-y-4">
           <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>定义测试用例（至少 1 个）。每个测试包含名称、输入和预期输出。</p>
+          <FormField
+            label="测试用例"
+            required
+            hint="至少 1 条完整用例（名称/输入/预期输出）。"
+            error={getFieldError('tests')}
+            count={{ current: completeTests, recommended: 1 }}
+            status={getFieldState('tests', completeTests >= 1)}
+          >
+            <div className="h-0.5" />
+          </FormField>
           {tests.map((test, i) => (
-            <div key={i} className={`${roundedClass} border p-3 space-y-2 ${aiRingClass('tests')}`}>
+            <div key={i} className={`${roundedClass} border border-[var(--input-border)] p-3 space-y-2 ${aiRingClass('tests')}`}>
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">测试 {i + 1}</span>
                 {tests.length > 1 && <button onClick={() => { markUserEdited('tests'); removeTest(i) }} className="opacity-40 hover:opacity-100" style={{ color: 'var(--danger)' }}><Trash2 className="h-4 w-4" /></button>}
               </div>
-              <input value={test.name} onChange={(e) => { markUserEdited('tests'); updateTest(i, 'name', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-1.5 text-sm ${monoDataClass}`} placeholder="测试名称" />
-              <textarea value={test.input} onChange={(e) => { markUserEdited('tests'); updateTest(i, 'input', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-1.5 text-sm font-mono`} rows={2} placeholder="输入" />
-              <textarea value={test.expected_output} onChange={(e) => { markUserEdited('tests'); updateTest(i, 'expected_output', e.target.value) }} className={`w-full ${roundedClass} border px-3 py-1.5 text-sm font-mono`} rows={2} placeholder="预期输出" />
+              <Input
+                value={test.name}
+                density="compact"
+                onChange={(e) => { markUserEdited('tests'); updateTest(i, 'name', e.target.value) }}
+                state={!test.name.trim() && shouldShowFieldError('tests') ? 'error' : 'default'}
+                className={`w-full ${roundedClass} ${monoDataClass}`}
+                placeholder="测试名称"
+              />
+              <Textarea
+                value={test.input}
+                density="compact"
+                onChange={(e) => { markUserEdited('tests'); updateTest(i, 'input', e.target.value) }}
+                state={!test.input.trim() && shouldShowFieldError('tests') ? 'error' : 'default'}
+                className={`w-full ${roundedClass} min-h-[92px] font-mono`}
+                rows={2}
+                placeholder="输入"
+              />
+              <Textarea
+                value={test.expected_output}
+                density="compact"
+                onChange={(e) => { markUserEdited('tests'); updateTest(i, 'expected_output', e.target.value) }}
+                state={!test.expected_output.trim() && shouldShowFieldError('tests') ? 'error' : 'default'}
+                className={`w-full ${roundedClass} min-h-[92px] font-mono`}
+                rows={2}
+                placeholder="预期输出"
+              />
             </div>
           ))}
           <button onClick={addTest} className="inline-flex items-center gap-1 text-sm hover:opacity-70" style={{ color: 'var(--muted-foreground)' }}><Plus className="h-4 w-4" /> 添加测试用例</button>
@@ -548,7 +762,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
                 </div>
                 <div className="flex-1">
                   <label className="mb-1 block text-xs font-medium" style={{ color: 'var(--muted-foreground)' }}>文件名</label>
-                  <input value={newFileName} onChange={(e) => setNewFileName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleCreateFile())} className={`w-full ${roundedClass} border px-3 py-1.5 text-sm`} placeholder="例如 rules.md" />
+                  <Input value={newFileName} density="compact" onChange={(e) => setNewFileName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleCreateFile())} className={`w-full ${roundedClass}`} placeholder="例如 rules.md" />
                 </div>
                 <button onClick={handleCreateFile} disabled={fileSaving || !newFileName.trim()} className={`${roundedLgClass} px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50`} style={{ background: 'var(--foreground)' }}>
                   <Plus className="inline h-4 w-4 mr-1" />创建
@@ -596,7 +810,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
                             {fileSaving ? '保存中...' : '保存'}
                           </button>
                         </div>
-                        <textarea value={fileContent} onChange={(e) => setFileContent(e.target.value)} className={`flex-1 w-full rounded border px-3 py-2 text-sm font-mono resize-none min-h-[250px]`} />
+                        <Textarea value={fileContent} onChange={(e) => setFileContent(e.target.value)} className={`flex-1 w-full rounded min-h-[250px] font-mono resize-none`} />
                       </div>
                     )
                   ) : (
@@ -617,15 +831,16 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
           ) : (
             <>
               <div>
-                <label className="mb-1 block text-sm font-medium">指令（可选）</label>
-                <textarea
-                  value={aiInstruction}
-                  onChange={(e) => setAiInstruction(e.target.value)}
-                  className={`w-full ${roundedClass} border px-3 py-2 text-sm`}
-                  rows={2}
-                  placeholder="例如：让摘要更简洁，添加错误处理步骤..."
-                  data-testid="ai-instruction"
-                />
+                <FormField label="指令（可选）" hint="描述你希望 AI 优化的方向。" count={{ current: aiInstruction.length, recommended: 120 }}>
+                  <Textarea
+                    value={aiInstruction}
+                    onChange={(e) => setAiInstruction(e.target.value)}
+                    className={`w-full ${roundedClass} min-h-[90px]`}
+                    rows={2}
+                    placeholder="例如：让摘要更简洁，添加错误处理步骤..."
+                    data-testid="ai-instruction"
+                  />
+                </FormField>
               </div>
 
               <div className="flex gap-2">
