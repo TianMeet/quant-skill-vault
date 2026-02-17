@@ -14,6 +14,7 @@
     "db:push": "npx prisma db push",
     "db:seed": "npx prisma db seed",
     "db:generate": "npx prisma generate",
+    "tag:normalize": "node scripts/normalize-tags.js",
     "test": "vitest run",
     "test:unit": "vitest run src/lib/__tests__",
     "test:api": "vitest run src/app/api/__tests__",

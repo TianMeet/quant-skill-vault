@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { SkillGuardrails, SkillTestCase, SkillData } from '@/lib/types'
 import type { SkillDraft } from '@/lib/chat/types'
+import { normalizeTagName, normalizeTagNames } from '@/lib/tag-normalize'
 
 const defaultGuardrails: SkillGuardrails = {
   allowed_tools: [],
@@ -184,7 +185,7 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
     }
 
     if (draft.tags !== undefined && !state.userEdited.has('tags')) {
-      updates.tags = draft.tags
+      updates.tags = normalizeTagNames(draft.tags)
       state.highlightField('tags')
     }
 
@@ -239,7 +240,7 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
       triggers: data.triggers?.length ? data.triggers : ['', '', ''],
       guardrails: data.guardrails || { ...defaultGuardrails },
       tests: data.tests?.length ? data.tests : [{ ...defaultTest }],
-      tags: data.tags || [],
+      tags: normalizeTagNames(data.tags || []),
     }),
 
   reset: () => {
@@ -322,7 +323,11 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
     }),
 
   addTag: (tag) =>
-    set((s) => (tag && !s.tags.includes(tag) ? { tags: [...s.tags, tag] } : {})),
+    set((s) => {
+      const normalized = normalizeTagName(tag)
+      if (!normalized || s.tags.includes(normalized)) return {}
+      return { tags: [...s.tags, normalized] }
+    }),
 
   removeTag: (tag) =>
     set((s) => ({ tags: s.tags.filter((t) => t !== tag) })),

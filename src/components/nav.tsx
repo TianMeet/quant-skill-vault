@@ -14,6 +14,7 @@ export function Nav() {
 
   const links = [
     { href: '/skills', label: '技能列表', match: (p: string) => p === '/skills' },
+    { href: '/tags', label: '标签管理', match: (p: string) => p === '/tags' },
   ]
 
   return (

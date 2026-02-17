@@ -2,15 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { createSkillSchema } from '@/lib/zod-schemas'
 import { slugify } from '@/lib/slugify'
+import { buildCreateTagConnect, isServiceError } from '@/lib/tag-service'
+import { normalizeTagNames } from '@/lib/tag-normalize'
 
 export const runtime = 'nodejs'
 
 function isPrismaCode(err: unknown, code: string): boolean {
   return !!err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === code
-}
-
-function normalizeTags(tags: string[]): string[] {
-  return [...new Set(tags.map((t) => t.trim()).filter(Boolean))]
 }
 
 /**
@@ -20,7 +18,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const query = searchParams.get('query') || ''
   const tagsParam = searchParams.get('tags') || ''
-  const tagNames = tagsParam ? tagsParam.split(',').filter(Boolean) : []
+  const tagNames = tagsParam ? normalizeTagNames(tagsParam.split(',')) : []
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: any = {}
@@ -76,17 +74,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Upsert tags
-    const normalizedTags = normalizeTags(parsed.tags)
-    const tagRecords = await Promise.all(
-      normalizedTags.map((name) =>
-        prisma.tag.upsert({
-          where: { name },
-          update: {},
-          create: { name },
-        })
-      )
-    )
+    const tagConnect = await buildCreateTagConnect(parsed.tags)
 
     const skill = await prisma.skill.create({
       data: {
@@ -100,9 +88,7 @@ export async function POST(request: NextRequest) {
         triggers: parsed.triggers,
         guardrails: parsed.guardrails,
         tests: parsed.tests,
-        tags: {
-          create: tagRecords.map((t) => ({ tagId: t.id })),
-        },
+        tags: tagConnect,
       },
       include: {
         tags: { include: { tag: true } },
@@ -116,6 +102,9 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     if (err instanceof Error && err.name === 'ZodError') {
       return NextResponse.json({ error: 'Validation failed', details: err }, { status: 400 })
+    }
+    if (isServiceError(err, 'TAG_NAME_INVALID')) {
+      return NextResponse.json({ error: (err as Error).message }, { status: 400 })
     }
     if (isPrismaCode(err, 'P2002')) {
       return NextResponse.json({ error: 'Slug already exists' }, { status: 409 })

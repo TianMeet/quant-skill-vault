@@ -15,6 +15,9 @@ interface AuthorTabProps {
   summary: string
   tags: string[]
   tagInput: string
+  tagSuggestions: string[]
+  canCreateTag: boolean
+  createTagPreview: string
   inputs: string
   outputs: string
   steps: string[]
@@ -22,6 +25,7 @@ interface AuthorTabProps {
   filledSteps: number
   setTagInput: (value: string) => void
   handleAddTag: () => void
+  handleSelectSuggestedTag: (tag: string) => void
   removeTag: (tag: string) => void
   markUserEdited: (field: string) => void
   setField: (field: 'title' | 'summary' | 'inputs' | 'outputs' | 'risks', value: string) => void
@@ -43,6 +47,9 @@ export function SkillFormAuthorTab({
   summary,
   tags,
   tagInput,
+  tagSuggestions,
+  canCreateTag,
+  createTagPreview,
   inputs,
   outputs,
   steps,
@@ -50,6 +57,7 @@ export function SkillFormAuthorTab({
   filledSteps,
   setTagInput,
   handleAddTag,
+  handleSelectSuggestedTag,
   removeTag,
   markUserEdited,
   setField,
@@ -141,6 +149,38 @@ export function SkillFormAuthorTab({
             添加
           </Button>
         </div>
+        {tagInput.trim() && (
+          <div className={`mt-2 border p-1 ${roundedClass}`} style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>
+            {tagSuggestions.length === 0 && !canCreateTag && (
+              <div className="px-2 py-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                没有匹配标签
+              </div>
+            )}
+            {tagSuggestions.map((tag) => (
+              <Button
+                key={tag}
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => handleSelectSuggestedTag(tag)}
+                className={`h-7 w-full justify-start px-2 text-xs ${roundedClass}`}
+              >
+                {tag}
+              </Button>
+            ))}
+            {canCreateTag && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleAddTag}
+                className={`h-7 w-full justify-start px-2 text-xs ${roundedClass}`}
+              >
+                创建标签 &quot;{createTagPreview}&quot;
+              </Button>
+            )}
+          </div>
+        )}
       </FormField>
 
       <FormField

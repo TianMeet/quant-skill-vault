@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { updateSkillSchema } from '@/lib/zod-schemas'
 import { slugify } from '@/lib/slugify'
+import { buildReplaceTagConnect, isServiceError } from '@/lib/tag-service'
 
 export const runtime = 'nodejs'
 
@@ -9,10 +10,6 @@ type RouteParams = { params: Promise<{ id: string }> }
 
 function isPrismaCode(err: unknown, code: string): boolean {
   return !!err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === code
-}
-
-function normalizeTags(tags: string[]): string[] {
-  return [...new Set(tags.map((t) => t.trim()).filter(Boolean))]
 }
 
 function parseSkillId(rawId: string): number | null {
@@ -74,20 +71,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // Handle tags update
     let tagConnect
     if (parsed.tags) {
-      const normalized = normalizeTags(parsed.tags)
-      const tagRecords = await Promise.all(
-        normalized.map((name) =>
-          prisma.tag.upsert({
-            where: { name },
-            update: {},
-            create: { name },
-          })
-        )
-      )
-      tagConnect = {
-        deleteMany: {},
-        create: tagRecords.map((t) => ({ tagId: t.id })),
-      }
+      tagConnect = await buildReplaceTagConnect(parsed.tags)
     }
 
     const skill = await prisma.skill.update({
@@ -115,6 +99,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   } catch (err) {
     if (err instanceof Error && err.name === 'ZodError') {
       return NextResponse.json({ error: 'Validation failed', details: err }, { status: 400 })
+    }
+    if (isServiceError(err, 'TAG_NAME_INVALID')) {
+      return NextResponse.json({ error: (err as Error).message }, { status: 400 })
     }
     if (isPrismaCode(err, 'P2002')) {
       return NextResponse.json({ error: 'Slug already exists' }, { status: 409 })

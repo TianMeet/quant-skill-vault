@@ -232,6 +232,33 @@ export function toUserFriendlyErrorMessage(raw: unknown): string {
   if (message === 'Invalid JSON body') {
     return '请求格式不正确，请刷新页面后重试。'
   }
+  if (message === 'Tag not found') {
+    return '标签不存在，可能已被删除。'
+  }
+  if (message === 'Source tag not found') {
+    return '源标签不存在，请刷新后重试。'
+  }
+  if (message === 'Target tag not found') {
+    return '目标标签不存在，请刷新后重试。'
+  }
+  if (message === 'Invalid tag id') {
+    return '标签标识无效，请刷新后重试。'
+  }
+  if (message === 'Invalid source tag id' || message === 'Invalid target tag id') {
+    return '标签参数无效，请重新选择后重试。'
+  }
+  if (message === 'Tag name is required') {
+    return '请输入标签名称。'
+  }
+  if (message.startsWith('Tag name too long')) {
+    return '标签名称过长，请控制在 100 字符以内。'
+  }
+  if (message === 'Tag name already exists') {
+    return '该标签名称已存在，可直接使用或改为“合并标签”。'
+  }
+  if (message === 'Source and target tags cannot be the same') {
+    return '源标签和目标标签不能相同。'
+  }
   if (message === 'path is required') {
     return '缺少文件路径，请填写后重试。'
   }

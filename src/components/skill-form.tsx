@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SkillData } from '@/lib/types'
 import { useSkillStore } from '@/lib/stores/skill-store'
@@ -14,6 +14,7 @@ import { SkillFormTestsTab } from '@/components/skill-form/tests-tab'
 import { SkillFormTriggersTab } from '@/components/skill-form/triggers-tab'
 import { useSkillFormValidation } from '@/components/skill-form/use-skill-form-validation'
 import { toUserFriendlyErrorMessage } from '@/lib/friendly-validation'
+import { normalizeTagName, normalizeTagNames } from '@/lib/tag-normalize'
 import { AlertCircle } from 'lucide-react'
 
 interface SkillFormProps {
@@ -62,6 +63,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   const [newFileName, setNewFileName] = useState('')
   const [fileSaving, setFileSaving] = useState(false)
   const [tagInput, setTagInput] = useState('')
+  const [availableTags, setAvailableTags] = useState<string[]>([])
   const [showValidation, setShowValidation] = useState(false)
 
   // AI tab state (保持本地)
@@ -85,6 +87,29 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   useEffect(() => {
     if (skillId) loadFiles()
   }, [skillId, loadFiles])
+
+  const loadTags = useCallback(async () => {
+    try {
+      const res = await fetch('/api/tags')
+      if (!res.ok) return
+      const data = await res.json().catch(() => ({}))
+      const items = Array.isArray(data) ? data : Array.isArray(data.items) ? data.items : []
+      const names = normalizeTagNames(
+        items
+          .map((item: unknown) =>
+            typeof item === 'object' && item && 'name' in item ? String((item as { name: unknown }).name) : ''
+          )
+          .filter(Boolean)
+      )
+      setAvailableTags(names)
+    } catch {
+      setAvailableTags([])
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadTags()
+  }, [loadTags])
 
   async function handleCreateFile() {
     if (!skillId || !newFileName.trim()) return
@@ -248,9 +273,34 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   }
 
   function handleAddTag() {
-    const t = tagInput.trim()
-    if (t) { addTag(t); setTagInput('') }
+    const nextTag = normalizeTagName(tagInput)
+    if (!nextTag) return
+    markUserEdited('tags')
+    addTag(nextTag)
+    setAvailableTags((prev) => (prev.includes(nextTag) ? prev : [...prev, nextTag].sort((a, b) => a.localeCompare(b))))
+    setTagInput('')
   }
+
+  function handleSelectSuggestedTag(tag: string) {
+    markUserEdited('tags')
+    addTag(tag)
+    setTagInput('')
+  }
+
+  const normalizedTagInput = normalizeTagName(tagInput)
+  const tagSuggestions = useMemo(
+    () =>
+      normalizedTagInput
+        ? availableTags
+            .filter((name) => name.includes(normalizedTagInput) && !tags.includes(name))
+            .slice(0, 8)
+        : [],
+    [availableTags, normalizedTagInput, tags]
+  )
+  const canCreateTag =
+    !!normalizedTagInput &&
+    !tags.includes(normalizedTagInput) &&
+    !availableTags.includes(normalizedTagInput)
 
   const tabs = [
     { id: 'author', label: '编写' },
@@ -432,6 +482,9 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
           summary={summary}
           tags={tags}
           tagInput={tagInput}
+          tagSuggestions={tagSuggestions}
+          canCreateTag={canCreateTag}
+          createTagPreview={normalizedTagInput}
           inputs={inputs}
           outputs={outputs}
           steps={steps}
@@ -439,7 +492,8 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
           filledSteps={filledSteps}
           setTagInput={setTagInput}
           handleAddTag={handleAddTag}
-          removeTag={removeTag}
+          handleSelectSuggestedTag={handleSelectSuggestedTag}
+          removeTag={(tag) => { markUserEdited('tags'); removeTag(tag) }}
           markUserEdited={markUserEdited}
           setField={(field, value) => setField(field, value)}
           updateStep={updateStep}

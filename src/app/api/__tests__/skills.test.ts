@@ -49,8 +49,8 @@ describe('Skills API', () => {
       const data = await res.json()
       expect(data.title).toBe('Test Skill')
       expect(data.slug).toBe('test-skill')
-      expect(data.tags).toContain('NLP')
-      expect(data.tags).toContain('Testing')
+      expect(data.tags).toContain('nlp')
+      expect(data.tags).toContain('testing')
     })
 
     it('should return 400 for invalid body', async () => {
@@ -246,8 +246,12 @@ describe('Skills API', () => {
 
   describe('GET /api/tags', () => {
     it('should return tags list', async () => {
-      const res = await getTags()
+      const req = makeRequest('http://localhost:3000/api/tags')
+      const res = await getTags(req)
       expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(Array.isArray(data.items)).toBe(true)
+      expect(typeof data.total).toBe('number')
     })
   })
 })

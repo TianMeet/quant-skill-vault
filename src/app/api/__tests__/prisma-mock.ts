@@ -25,6 +25,80 @@ function restoreMap<T extends Record<string, unknown>>(target: Map<number, T>, s
   for (const [k, v] of snapshot) target.set(k, structuredClone(v))
 }
 
+function findTagByName(name: string) {
+  for (const [, tag] of mockTags) {
+    if (tag.name === name) return tag
+  }
+  return null
+}
+
+function findOrCreateTag(name: string) {
+  const existing = findTagByName(name)
+  if (existing) return existing
+  const id = tagIdCounter++
+  const tag = {
+    id,
+    name,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    createdBy: 'SYS',
+    updatedBy: 'SYS',
+  }
+  mockTags.set(id, tag)
+  return tag
+}
+
+function getSkillTags(skill: Record<string, unknown>): string[] {
+  return Array.isArray(skill._tags) ? [...(skill._tags as string[])] : []
+}
+
+function setSkillTags(skill: Record<string, unknown>, tags: string[]) {
+  skill._tags = [...new Set(tags)]
+}
+
+function mapSkillForResponse(skill: Record<string, unknown>) {
+  return {
+    ...skill,
+    tags: getSkillTags(skill).map((name) => ({ tag: { name } })),
+  }
+}
+
+function countSkillsByTagName(tagName: string) {
+  let count = 0
+  for (const [, skill] of mockSkills) {
+    if (getSkillTags(skill).includes(tagName)) count += 1
+  }
+  return count
+}
+
+function applyTagMutationOnSkill(skill: Record<string, unknown>, tagsData: Record<string, unknown>) {
+  let nextTags = getSkillTags(skill)
+
+  if ('deleteMany' in tagsData) {
+    const deleteMany = tagsData.deleteMany as Record<string, unknown>
+    if (deleteMany && typeof deleteMany === 'object' && 'tagId' in deleteMany) {
+      const targetTag = mockTags.get(Number(deleteMany.tagId))
+      if (targetTag) {
+        nextTags = nextTags.filter((name) => name !== targetTag.name)
+      }
+    } else {
+      nextTags = []
+    }
+  }
+
+  if ('create' in tagsData) {
+    const creates = (tagsData.create as Array<{ tagId: number }>) || []
+    for (const item of creates) {
+      const targetTag = mockTags.get(item.tagId)
+      if (targetTag && !nextTags.includes(targetTag.name as string)) {
+        nextTags.push(targetTag.name as string)
+      }
+    }
+  }
+
+  setSkillTags(skill, nextTags)
+}
+
 export function resetMockDb() {
   mockSkills.clear()
   mockTags.clear()
@@ -32,12 +106,13 @@ export function resetMockDb() {
   skillIdCounter = 1
   tagIdCounter = 1
   fileIdCounter = 1
-  // Reset all mock call counts
   vi.clearAllMocks()
 }
 
 export function seedMockSkill(data: Record<string, unknown>) {
   const id = skillIdCounter++
+  const tags = Array.isArray(data._tags) ? data._tags.map((item) => String(item)) : []
+  for (const name of tags) findOrCreateTag(name)
   const skill = {
     id,
     createdAt: new Date(),
@@ -45,6 +120,7 @@ export function seedMockSkill(data: Record<string, unknown>) {
     createdBy: 'SYS',
     updatedBy: 'SYS',
     ...data,
+    _tags: tags,
   }
   mockSkills.set(id, skill)
   return skill
@@ -62,74 +138,74 @@ export function getMockFiles() {
   return mockFiles
 }
 
-function findOrCreateTag(name: string) {
-  for (const [, tag] of mockTags) {
-    if (tag.name === name) return tag
-  }
-  const id = tagIdCounter++
-  const tag = { id, name, createdAt: new Date(), updatedAt: new Date(), createdBy: 'SYS', updatedBy: 'SYS' }
-  mockTags.set(id, tag)
-  return tag
-}
-
 export const prismaMock = {
   skill: {
-    findMany: vi.fn(async (args?: { where?: Record<string, unknown>; include?: unknown; orderBy?: unknown }) => {
+    findMany: vi.fn(async (args?: { where?: Record<string, unknown>; include?: unknown; select?: Record<string, boolean>; orderBy?: Record<string, string> }) => {
       let results = Array.from(mockSkills.values())
 
       if (args?.where) {
-        const w = args.where
-        if (w.OR) {
-          const orConditions = w.OR as Array<Record<string, { contains?: string }>>
-          results = results.filter((s) =>
+        const where = args.where
+        if (where.OR) {
+          const orConditions = where.OR as Array<Record<string, { contains?: string }>>
+          results = results.filter((skill) =>
             orConditions.some((cond) => {
               for (const [key, val] of Object.entries(cond)) {
-                if (val.contains && String(s[key]).includes(val.contains)) return true
+                if (val.contains && String(skill[key]).includes(val.contains)) return true
               }
               return false
             })
           )
         }
-        if (w.tags) {
-          // Filter by tag names
-          const tagFilter = w.tags as { some: { tag: { name: { in: string[] } } } }
-          const tagNames = tagFilter.some.tag.name.in
-          results = results.filter((s) => {
-            const skillTags = (s._tags as string[]) || []
-            return tagNames.some((tn) => skillTags.includes(tn))
-          })
+
+        if (where.tags && typeof where.tags === 'object') {
+          const some = (where.tags as { some?: Record<string, unknown> }).some || {}
+          if ('tag' in some) {
+            const tagNames = (some as { tag: { name: { in: string[] } } }).tag.name.in
+            results = results.filter((skill) =>
+              tagNames.some((name) => getSkillTags(skill).includes(name))
+            )
+          } else if ('tagId' in some) {
+            const tagId = Number((some as { tagId: number }).tagId)
+            const tag = mockTags.get(tagId)
+            const tagName = tag?.name as string | undefined
+            results = results.filter((skill) =>
+              !!tagName && getSkillTags(skill).includes(tagName)
+            )
+          }
         }
       }
 
-      return results.map((s) => ({
-        ...s,
-        tags: ((s._tags as string[]) || []).map((name) => ({
-          tag: { name },
-        })),
-      }))
+      if (args?.orderBy?.updatedAt) {
+        results = results.sort((a, b) => {
+          const ta = new Date(String(a.updatedAt)).getTime()
+          const tb = new Date(String(b.updatedAt)).getTime()
+          return args.orderBy?.updatedAt === 'desc' ? tb - ta : ta - tb
+        })
+      }
+
+      if (args?.select) {
+        return results.map((skill) => {
+          const out: Record<string, unknown> = {}
+          for (const [key, enabled] of Object.entries(args.select || {})) {
+            if (enabled) out[key] = skill[key]
+          }
+          return out
+        })
+      }
+
+      return results.map((skill) => mapSkillForResponse(skill))
     }),
 
     findUnique: vi.fn(async (args: { where: { id?: number; slug?: string } }) => {
       if (args.where.id) {
         const skill = mockSkills.get(args.where.id)
         if (!skill) return null
-        return {
-          ...skill,
-          tags: ((skill._tags as string[]) || []).map((name) => ({
-            tag: { name },
-          })),
-        }
+        return mapSkillForResponse(skill)
       }
+
       if (args.where.slug) {
         for (const [, skill] of mockSkills) {
-          if (skill.slug === args.where.slug) {
-            return {
-              ...skill,
-              tags: ((skill._tags as string[]) || []).map((name) => ({
-                tag: { name },
-              })),
-            }
-          }
+          if (skill.slug === args.where.slug) return mapSkillForResponse(skill)
         }
       }
       return null
@@ -138,38 +214,35 @@ export const prismaMock = {
     create: vi.fn(async (args: { data: Record<string, unknown>; include?: unknown }) => {
       const id = skillIdCounter++
       const { tags: tagsData, ...rest } = args.data
+
       for (const [, existing] of mockSkills) {
         if (existing.slug === rest.slug) {
           throw makePrismaError('P2002', 'Unique constraint failed on slug')
         }
       }
-      const tagNames: string[] = []
-      if (tagsData && typeof tagsData === 'object' && 'create' in (tagsData as Record<string, unknown>)) {
-        const creates = (tagsData as { create: Array<{ tagId: number }> }).create
-        for (const c of creates) {
-          const tag = mockTags.get(c.tagId)
-          if (tag) tagNames.push(tag.name as string)
-        }
-      }
+
       const skill = {
         id,
         ...rest,
-        _tags: tagNames,
+        _tags: [],
         createdAt: new Date(),
         updatedAt: new Date(),
         createdBy: 'SYS',
         updatedBy: 'SYS',
       }
-      mockSkills.set(id, skill)
-      return {
-        ...skill,
-        tags: tagNames.map((name) => ({ tag: { name } })),
+
+      if (tagsData && typeof tagsData === 'object') {
+        applyTagMutationOnSkill(skill, tagsData as Record<string, unknown>)
       }
+
+      mockSkills.set(id, skill)
+      return mapSkillForResponse(skill)
     }),
 
     update: vi.fn(async (args: { where: { id: number }; data: Record<string, unknown>; include?: unknown }) => {
-      const skill = mockSkills.get(args.where.id)
-      if (!skill) throw new Error('Not found')
+      const current = mockSkills.get(args.where.id)
+      if (!current) throw new Error('Not found')
+
       const { tags: tagsData, ...rest } = args.data
       if (rest.slug) {
         for (const [sid, existing] of mockSkills) {
@@ -178,21 +251,19 @@ export const prismaMock = {
           }
         }
       }
-      const updated = { ...skill, ...rest, updatedAt: new Date() }
-      if (tagsData && typeof tagsData === 'object' && 'create' in (tagsData as Record<string, unknown>)) {
-        const creates = (tagsData as { create: Array<{ tagId: number }> }).create
-        const tagNames: string[] = []
-        for (const c of creates) {
-          const tag = mockTags.get(c.tagId)
-          if (tag) tagNames.push(tag.name as string)
-        }
-        updated._tags = tagNames
+
+      const updated = {
+        ...current,
+        ...rest,
+        updatedAt: new Date(),
       }
+
+      if (tagsData && typeof tagsData === 'object') {
+        applyTagMutationOnSkill(updated, tagsData as Record<string, unknown>)
+      }
+
       mockSkills.set(args.where.id, updated)
-      return {
-        ...updated,
-        tags: ((updated._tags as string[]) || []).map((name: string) => ({ tag: { name } })),
-      }
+      return mapSkillForResponse(updated)
     }),
 
     delete: vi.fn(async (args: { where: { id: number } }) => {
@@ -202,15 +273,104 @@ export const prismaMock = {
   },
 
   tag: {
-    findMany: vi.fn(async () => {
-      return Array.from(mockTags.values()).map((t) => ({
-        ...t,
-        _count: { skills: 0 },
-      }))
+    findMany: vi.fn(async (args?: { where?: Record<string, unknown>; include?: Record<string, unknown>; orderBy?: Record<string, string> }) => {
+      let results = Array.from(mockTags.values())
+
+      if (args?.where?.name && typeof args.where.name === 'object' && 'contains' in args.where.name) {
+        const query = String((args.where.name as { contains: string }).contains || '')
+        results = results.filter((tag) => String(tag.name).includes(query))
+      }
+
+      if (args?.orderBy?.name) {
+        results = results.sort((a, b) =>
+          args.orderBy?.name === 'asc'
+            ? String(a.name).localeCompare(String(b.name))
+            : String(b.name).localeCompare(String(a.name))
+        )
+      }
+
+      return results.map((tag) => {
+        const base = { ...tag }
+        if (args?.include?._count) {
+          base._count = { skills: countSkillsByTagName(String(tag.name)) }
+        }
+        return base
+      })
     }),
 
-    upsert: vi.fn(async (args: { where: { name: string }; update: unknown; create: { name: string } }) => {
+    findUnique: vi.fn(async (args: { where: { id?: number; name?: string }; include?: Record<string, unknown> }) => {
+      let tag: Record<string, unknown> | null = null
+      if (args.where.id) {
+        tag = mockTags.get(args.where.id) || null
+      } else if (args.where.name) {
+        tag = findTagByName(args.where.name)
+      }
+      if (!tag) return null
+
+      const result: Record<string, unknown> = { ...tag }
+      if (args.include?._count) {
+        result._count = { skills: countSkillsByTagName(String(tag.name)) }
+      }
+      if (args.include?.skills) {
+        const linked = Array.from(mockSkills.values())
+          .filter((skill) => getSkillTags(skill).includes(String(tag.name)))
+          .map((skill) => ({ skillId: skill.id }))
+        result.skills = linked
+      }
+      return result
+    }),
+
+    count: vi.fn(async (args?: { where?: Record<string, unknown> }) => {
+      let results = Array.from(mockTags.values())
+      if (args?.where?.name && typeof args.where.name === 'object' && 'contains' in args.where.name) {
+        const query = String((args.where.name as { contains: string }).contains || '')
+        results = results.filter((tag) => String(tag.name).includes(query))
+      }
+      return results.length
+    }),
+
+    upsert: vi.fn(async (args: { where: { name: string }; update: Record<string, unknown>; create: { name: string } }) => {
       return findOrCreateTag(args.where.name || args.create.name)
+    }),
+
+    update: vi.fn(async (args: { where: { id: number }; data: { name?: string } }) => {
+      const current = mockTags.get(args.where.id)
+      if (!current) throw makePrismaError('P2025', 'Record not found')
+      const nextName = String(args.data.name || current.name)
+
+      const conflict = findTagByName(nextName)
+      if (conflict && conflict.id !== args.where.id) {
+        throw makePrismaError('P2002', 'Unique constraint failed on tag name')
+      }
+
+      const oldName = String(current.name)
+      const updated = { ...current, name: nextName, updatedAt: new Date() }
+      mockTags.set(args.where.id, updated)
+
+      if (oldName !== nextName) {
+        for (const [, skill] of mockSkills) {
+          const tags = getSkillTags(skill)
+          if (!tags.includes(oldName)) continue
+          const replaced = tags.map((name) => (name === oldName ? nextName : name))
+          setSkillTags(skill, replaced)
+        }
+      }
+
+      return updated
+    }),
+
+    delete: vi.fn(async (args: { where: { id: number } }) => {
+      const current = mockTags.get(args.where.id)
+      if (!current) throw makePrismaError('P2025', 'Record not found')
+      mockTags.delete(args.where.id)
+
+      const tagName = String(current.name)
+      for (const [, skill] of mockSkills) {
+        const tags = getSkillTags(skill).filter((name) => name !== tagName)
+        setSkillTags(skill, tags)
+      }
+
+      return current
     }),
   },
 
@@ -225,8 +385,8 @@ export const prismaMock = {
 
     findUnique: vi.fn(async (args: { where: { skillId_path?: { skillId: number; path: string }; id?: number } }) => {
       if (args.where.skillId_path) {
-        for (const [, f] of mockFiles) {
-          if (f.skillId === args.where.skillId_path.skillId && f.path === args.where.skillId_path.path) return f
+        for (const [, file] of mockFiles) {
+          if (file.skillId === args.where.skillId_path.skillId && file.path === args.where.skillId_path.path) return file
         }
         return null
       }
@@ -247,9 +407,9 @@ export const prismaMock = {
     }),
 
     update: vi.fn(async (args: { where: { skillId_path: { skillId: number; path: string } }; data: Record<string, unknown> }) => {
-      for (const [fid, f] of mockFiles) {
-        if (f.skillId === args.where.skillId_path.skillId && f.path === args.where.skillId_path.path) {
-          const updated = { ...f, ...args.data, updatedAt: new Date() }
+      for (const [fid, file] of mockFiles) {
+        if (file.skillId === args.where.skillId_path.skillId && file.path === args.where.skillId_path.path) {
+          const updated = { ...file, ...args.data, updatedAt: new Date() }
           mockFiles.set(fid, updated)
           return updated
         }
@@ -258,10 +418,10 @@ export const prismaMock = {
     }),
 
     delete: vi.fn(async (args: { where: { skillId_path: { skillId: number; path: string } } }) => {
-      for (const [fid, f] of mockFiles) {
-        if (f.skillId === args.where.skillId_path.skillId && f.path === args.where.skillId_path.path) {
+      for (const [fid, file] of mockFiles) {
+        if (file.skillId === args.where.skillId_path.skillId && file.path === args.where.skillId_path.path) {
           mockFiles.delete(fid)
-          return f
+          return file
         }
       }
       throw makePrismaError('P2025', 'Record to delete does not exist')

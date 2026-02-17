@@ -35,7 +35,9 @@ export default function SkillsListPage() {
     try {
       const res = await fetch('/api/tags')
       if (res.ok) {
-        setTags(await res.json())
+        const data = await res.json().catch(() => ({}))
+        const items = Array.isArray(data) ? data : Array.isArray(data.items) ? data.items : []
+        setTags(items)
       } else {
         setTags([])
       }
