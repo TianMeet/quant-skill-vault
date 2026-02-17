@@ -1,24 +1,13 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Nav } from "@/components/nav";
 import { ChatProvider } from "@/lib/chat/chat-context";
 import { ChatPanel } from "@/components/chat-panel";
 import { ThemeProvider } from "@/lib/theme-context";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
   title: "Skill Vault",
-  description: "Skill protocol management platform",
+  description: "Skill 协议管理平台",
 };
 
 export default function RootLayout({
@@ -27,9 +16,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="zh-CN" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
+        className="antialiased min-h-screen"
         style={{ background: 'var(--background)', color: 'var(--foreground)' }}
       >
         <ThemeProvider>

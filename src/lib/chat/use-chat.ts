@@ -1,17 +1,23 @@
 'use client'
 
 import { useState, useCallback, useRef } from 'react'
-import type { ChatMessage, ToolCallData, SSEEvent } from './types'
+import type { ChatMessage, ToolCallData, SkillDraft, SSEEvent } from './types'
 
 let msgCounter = 0
 const genId = () => `msg_${Date.now()}_${++msgCounter}`
 
-export function useChat() {
+interface UseChatOptions {
+  onDraftUpdate?: (draft: SkillDraft) => void
+}
+
+export function useChat(options?: UseChatOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamingText, setStreamingText] = useState('')
   const [pendingToolCall, setPendingToolCall] = useState<ToolCallData | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const onDraftUpdateRef = useRef(options?.onDraftUpdate)
+  onDraftUpdateRef.current = options?.onDraftUpdate
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -47,6 +53,8 @@ export function useChat() {
         let buffer = ''
         let accText = ''
         let toolCall: ToolCallData | null = null
+        // 收集所有 draft tool calls 以便存入消息
+        const draftToolCalls: ToolCallData[] = []
 
         while (true) {
           const { done, value } = await reader.read()
@@ -67,8 +75,14 @@ export function useChat() {
                   accText += data.text
                   setStreamingText(accText)
                 } else if (eventType === 'tool_use' && 'id' in data && 'input' in data) {
-                  toolCall = { id: data.id, name: data.name, input: data.input }
-                  setPendingToolCall(toolCall)
+                  if (data.name === 'update_skill_draft') {
+                    // 自动执行，不需要用户确认
+                    onDraftUpdateRef.current?.(data.input as unknown as SkillDraft)
+                    draftToolCalls.push({ id: data.id, name: data.name, input: data.input })
+                  } else {
+                    toolCall = { id: data.id, name: data.name, input: data.input }
+                    setPendingToolCall(toolCall)
+                  }
                 } else if (eventType === 'error' && 'message' in data) {
                   accText += `\n\n⚠️ ${data.message}`
                   setStreamingText(accText)
@@ -87,6 +101,7 @@ export function useChat() {
           role: 'assistant',
           content: accText,
           toolCall,
+          draftToolCalls: draftToolCalls.length > 0 ? draftToolCalls : undefined,
         }
         setMessages((prev) => [...prev, assistantMsg])
         setStreamingText('')
@@ -214,6 +229,7 @@ export function useChat() {
         let buffer = ''
         let accText = ''
         let toolCall: ToolCallData | null = null
+        const draftToolCalls: ToolCallData[] = []
 
         while (true) {
           const { done, value } = await reader.read()
@@ -234,8 +250,13 @@ export function useChat() {
                   accText += data.text
                   setStreamingText(accText)
                 } else if (eventType === 'tool_use') {
-                  toolCall = { id: data.id, name: data.name, input: data.input }
-                  setPendingToolCall(toolCall)
+                  if (data.name === 'update_skill_draft') {
+                    onDraftUpdateRef.current?.(data.input as unknown as SkillDraft)
+                    draftToolCalls.push({ id: data.id, name: data.name, input: data.input })
+                  } else {
+                    toolCall = { id: data.id, name: data.name, input: data.input }
+                    setPendingToolCall(toolCall)
+                  }
                 }
               } catch {
                 // ignore
@@ -250,6 +271,7 @@ export function useChat() {
           role: 'assistant',
           content: accText,
           toolCall,
+          draftToolCalls: draftToolCalls.length > 0 ? draftToolCalls : undefined,
         }
         setMessages((prev) => [...prev, assistantMsg])
         setStreamingText('')
@@ -306,6 +328,17 @@ function buildApiMessages(msgs: ChatMessage[]) {
       if (msg.content) {
         content.push({ type: 'text', text: msg.content })
       }
+      // 先添加 draft tool calls
+      if (msg.draftToolCalls) {
+        for (const dtc of msg.draftToolCalls) {
+          content.push({
+            type: 'tool_use',
+            id: dtc.id,
+            name: dtc.name,
+            input: dtc.input,
+          })
+        }
+      }
       if (msg.toolCall) {
         content.push({
           type: 'tool_use',
@@ -316,6 +349,17 @@ function buildApiMessages(msgs: ChatMessage[]) {
       }
       if (content.length > 0) {
         result.push({ role: 'assistant', content })
+      }
+
+      // 为 draft tool calls 自动生成 tool_result（Anthropic API 要求 tool_use 后必须跟 tool_result）
+      if (msg.draftToolCalls && msg.draftToolCalls.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const toolResults: any[] = msg.draftToolCalls.map((dtc) => ({
+          type: 'tool_result',
+          tool_use_id: dtc.id,
+          content: '已更新表单',
+        }))
+        result.push({ role: 'user', content: toolResults })
       }
     }
   }

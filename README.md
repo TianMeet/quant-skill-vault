@@ -146,6 +146,23 @@ CLAUDE_TIMEOUT_MS=60000    # 超时时间
 - 禁止修改 SKILL.md（由系统自动生成）
 - Prompt 长度限制 8KB，单文件 200KB
 
+## 对话式创建（新建页）
+
+新建页默认采用“对话主导 + 表单微调”的流程：右侧对话框边聊边生成，左侧表单实时回填。
+
+### Chat Provider 配置
+
+`/api/chat` 支持两种 provider：
+
+- `CHAT_PROVIDER=mock`：本地 mock 流式事件，不依赖外网/Key（推荐本地开发与测试）
+- `CHAT_PROVIDER=anthropic`：走 Anthropic Messages API（需要 `ANTHROPIC_API_KEY`）
+
+无 Key 或不在同网段时，使用：
+
+```bash
+CHAT_PROVIDER=mock
+```
+
 ## 项目结构
 
 ```

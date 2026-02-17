@@ -8,9 +8,10 @@ export interface ChatMessage {
   content: string
   toolCall?: ToolCallData | null
   toolResult?: { success: boolean; skillId?: number } | null
+  draftToolCalls?: ToolCallData[]
 }
 
-export type ToolName = 'create_skill' | 'update_skill' | 'create_file' | 'delete_file'
+export type ToolName = 'create_skill' | 'update_skill' | 'update_skill_draft' | 'create_file' | 'delete_file'
 
 export interface ToolCallData {
   id: string

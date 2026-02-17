@@ -1,6 +1,7 @@
 'use client'
 
-import { useRef, useEffect, useState, type KeyboardEvent } from 'react'
+import { useRef, useEffect, useState, useMemo, type KeyboardEvent } from 'react'
+import { usePathname } from 'next/navigation'
 import { X, Send, RotateCcw, Square, MessageSquarePlus } from 'lucide-react'
 import { useChatPanel } from '@/lib/chat/chat-context'
 import { useChat } from '@/lib/chat/use-chat'
@@ -8,7 +9,8 @@ import { ChatMessage, StreamingMessage } from './chat-message'
 import { ChatSkillPreview } from './chat-skill-preview'
 
 export function ChatPanel() {
-  const { isOpen, close } = useChatPanel()
+  const pathname = usePathname()
+  const { isOpen, close, skillDraft, updateDraft, resetDraft } = useChatPanel()
   const {
     messages,
     isStreaming,
@@ -18,11 +20,34 @@ export function ChatPanel() {
     createSkill,
     stopStreaming,
     reset,
-  } = useChat()
+  } = useChat({ onDraftUpdate: updateDraft })
 
   const [input, setInput] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // 计算填充进度：检查必填字段是否满足
+  const progress = useMemo(() => {
+    let filled = 0
+    const total = 6
+    if (skillDraft.title) filled++
+    if (skillDraft.summary) filled++
+    if (skillDraft.steps && skillDraft.steps.filter(Boolean).length >= 3) filled++
+    if (skillDraft.triggers && skillDraft.triggers.filter(Boolean).length >= 3) filled++
+    if (
+      skillDraft.guardrails?.stop_conditions &&
+      skillDraft.guardrails.stop_conditions.filter(Boolean).length >= 1 &&
+      skillDraft.guardrails?.escalation
+    ) filled++
+    if (
+      skillDraft.tests &&
+      skillDraft.tests.length >= 1 &&
+      skillDraft.tests[0]?.name &&
+      skillDraft.tests[0]?.input &&
+      skillDraft.tests[0]?.expected_output
+    ) filled++
+    return { filled, total }
+  }, [skillDraft])
 
   // 自动滚动到底部
   useEffect(() => {
@@ -61,6 +86,14 @@ export function ChatPanel() {
     }
   }
 
+  const handleReset = () => {
+    reset()
+    resetDraft()
+  }
+
+  // /skills/new 使用内联 ConsolePanel，隐藏全局 ChatPanel
+  if (pathname === '/skills/new') return null
+
   return (
     <>
       {/* 遮罩层 */}
@@ -94,10 +127,21 @@ export function ChatPanel() {
           <div className="flex items-center gap-2">
             <MessageSquarePlus className="h-4 w-4" style={{ color: 'var(--accent)' }} />
             <span className="text-sm font-semibold">AI 创建 Skill</span>
+            {progress.filled > 0 && (
+              <span
+                className="text-xs font-medium px-1.5 py-0.5 rounded-full"
+                style={{
+                  background: progress.filled === progress.total ? 'var(--success-light)' : 'var(--accent-light)',
+                  color: progress.filled === progress.total ? 'var(--success)' : 'var(--accent)',
+                }}
+              >
+                {progress.filled}/{progress.total}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1">
             <button
-              onClick={reset}
+              onClick={handleReset}
               className="p-1.5 rounded-md hover:opacity-70 transition-opacity"
               title="重置对话"
               aria-label="重置对话"
@@ -122,7 +166,7 @@ export function ChatPanel() {
               <MessageSquarePlus className="h-10 w-10 mb-3" style={{ color: 'var(--border)' }} />
               <p className="text-sm font-medium mb-1">用对话创建 Skill</p>
               <p className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
-                描述你想创建的 Skill，AI 会引导你完善所有细节
+                描述你想创建的 Skill，AI 会引导你完善所有细节并实时填充左侧表单
               </p>
             </div>
           )}
@@ -134,7 +178,6 @@ export function ChatPanel() {
                 <ChatSkillPreview
                   toolCall={msg.toolCall}
                   onConfirm={createSkill}
-                  onEdit={close}
                   created={msg.toolResult ?? undefined}
                 />
               )}

@@ -8,7 +8,7 @@ import type { ToolCallData } from '@/lib/chat/types'
 interface Props {
   toolCall: ToolCallData
   onConfirm: () => Promise<{ id: number } | null>
-  onEdit: () => void
+  onEdit?: () => void
   created?: { success: boolean; skillId?: number }
 }
 
@@ -34,7 +34,7 @@ export function ChatSkillPreview({ toolCall, onConfirm, onEdit, created }: Props
 
   const handleEditInForm = () => {
     sessionStorage.setItem('skill_draft', JSON.stringify(skill))
-    onEdit()
+    onEdit?.()
     router.push('/skills/new?from=chat')
   }
 

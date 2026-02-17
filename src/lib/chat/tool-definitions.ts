@@ -1,9 +1,91 @@
 /**
- * create_skill 工具定义
+ * create_skill / update_skill_draft 工具定义
  * JSON Schema 严格对齐 createSkillSchema
  */
 
 import type Anthropic from '@anthropic-ai/sdk'
+
+export const UPDATE_SKILL_DRAFT_TOOL: Anthropic.Tool = {
+  name: 'update_skill_draft',
+  description:
+    '渐进式更新左侧表单草稿。每收集到一个话题的信息就调用一次，所有字段均为可选。',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      title: {
+        type: 'string',
+        description: 'Skill 标题，不超过 200 字符',
+        maxLength: 200,
+      },
+      summary: {
+        type: 'string',
+        description: 'Skill 的简要描述',
+      },
+      inputs: {
+        type: 'string',
+        description: 'Skill 需要的输入说明',
+      },
+      outputs: {
+        type: 'string',
+        description: 'Skill 的输出说明',
+      },
+      steps: {
+        type: 'array',
+        description: '3-7 个执行步骤，使用祈使语气',
+        items: { type: 'string' },
+      },
+      risks: {
+        type: 'string',
+        description: '潜在风险说明',
+      },
+      triggers: {
+        type: 'array',
+        description: '至少 3 个触发短语',
+        items: { type: 'string' },
+      },
+      guardrails: {
+        type: 'object',
+        description: '安全护栏配置',
+        properties: {
+          allowed_tools: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+          disable_model_invocation: {
+            type: 'boolean',
+          },
+          user_invocable: {
+            type: 'boolean',
+          },
+          stop_conditions: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+          escalation: {
+            type: 'string',
+            enum: ['REVIEW', 'BLOCK', 'ASK_HUMAN'],
+          },
+        },
+      },
+      tests: {
+        type: 'array',
+        description: '测试用例',
+        items: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            input: { type: 'string' },
+            expected_output: { type: 'string' },
+          },
+        },
+      },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+      },
+    },
+  },
+}
 
 export const CREATE_SKILL_TOOL: Anthropic.Tool = {
   name: 'create_skill',
