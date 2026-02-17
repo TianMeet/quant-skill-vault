@@ -2,15 +2,17 @@
 
 import { Sun, Moon } from 'lucide-react'
 import { useTheme } from '@/lib/theme-context'
+import { Button } from '@/components/ui/button'
 
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme()
 
   return (
-    <button
+    <Button
       onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-      className="inline-flex items-center justify-center rounded-lg p-2 transition-all hover:opacity-80 active:scale-[0.97] border"
-      style={{ borderColor: 'var(--border)' }}
+      variant="outline"
+      size="icon"
+      className="rounded-lg"
       title={resolvedTheme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
       aria-label={resolvedTheme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
     >
@@ -19,6 +21,6 @@ export function ThemeToggle() {
       ) : (
         <Moon className="h-3.5 w-3.5" />
       )}
-    </button>
+    </Button>
   )
 }

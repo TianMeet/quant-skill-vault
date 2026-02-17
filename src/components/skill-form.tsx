@@ -6,6 +6,14 @@ import type { SkillData, SkillGuardrails } from '@/lib/types'
 import { useSkillStore } from '@/lib/stores/skill-store'
 import { FormField } from '@/components/ui/form-field'
 import { Input, type FieldVisualState } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Plus, Trash2, AlertCircle, CheckCircle, Upload, File, Wand2, Loader2, Eye } from 'lucide-react'
 
@@ -646,15 +654,19 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
           </FormField>
           <div className="flex items-center justify-between py-1">
             <label className="text-sm font-medium">禁用模型调用</label>
-            <button onClick={() => setGuardrails({ ...guardrails, disable_model_invocation: !guardrails.disable_model_invocation })} className="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors" style={{ background: guardrails.disable_model_invocation ? 'var(--accent)' : 'var(--muted)' }}>
-              <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${guardrails.disable_model_invocation ? 'translate-x-5' : 'translate-x-0'}`} />
-            </button>
+            <Switch
+              checked={guardrails.disable_model_invocation}
+              onCheckedChange={(checked) =>
+                setGuardrails({ ...guardrails, disable_model_invocation: checked })
+              }
+            />
           </div>
           <div className="flex items-center justify-between py-1">
             <label className="text-sm font-medium">用户可调用</label>
-            <button onClick={() => setGuardrails({ ...guardrails, user_invocable: !guardrails.user_invocable })} className="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors" style={{ background: guardrails.user_invocable ? 'var(--accent)' : 'var(--muted)' }}>
-              <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${guardrails.user_invocable ? 'translate-x-5' : 'translate-x-0'}`} />
-            </button>
+            <Switch
+              checked={guardrails.user_invocable}
+              onCheckedChange={(checked) => setGuardrails({ ...guardrails, user_invocable: checked })}
+            />
           </div>
           <FormField
             label="升级策略"
@@ -662,11 +674,22 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
             error={getFieldError('guardrails')}
             status={getFieldState('guardrails', filledStopConditions >= 1)}
           >
-            <select value={guardrails.escalation} onChange={(e) => { markUserEdited('guardrails'); setGuardrails({ ...guardrails, escalation: e.target.value as SkillGuardrails['escalation'] }) }} className={`h-10 w-full ${roundedClass} border border-[var(--input-border)] bg-[var(--input-bg)] px-3 py-2 text-sm shadow-[var(--shadow-sm)] transition-colors focus-visible:border-[var(--input-ring)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--input-ring)] ${aiRingClass('guardrails')}`}>
-              <option value="ASK_HUMAN">ASK_HUMAN</option>
-              <option value="REVIEW">REVIEW</option>
-              <option value="BLOCK">BLOCK</option>
-            </select>
+            <Select
+              value={guardrails.escalation}
+              onValueChange={(value) => {
+                markUserEdited('guardrails')
+                setGuardrails({ ...guardrails, escalation: value as SkillGuardrails['escalation'] })
+              }}
+            >
+              <SelectTrigger className={`h-10 w-full ${roundedClass} border-[var(--input-border)] bg-[var(--input-bg)] shadow-[var(--shadow-sm)] focus:ring-[var(--input-ring)] ${aiRingClass('guardrails')}`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="border-[var(--border)] bg-[var(--card)] text-[var(--foreground)]">
+                <SelectItem value="ASK_HUMAN">ASK_HUMAN</SelectItem>
+                <SelectItem value="REVIEW">REVIEW</SelectItem>
+                <SelectItem value="BLOCK">BLOCK</SelectItem>
+              </SelectContent>
+            </Select>
           </FormField>
           <FormField
             label="停止条件"
@@ -756,9 +779,16 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
               <div className="flex gap-2 items-end">
                 <div>
                   <label className="mb-1 block text-xs font-medium" style={{ color: 'var(--muted-foreground)' }}>目录</label>
-                  <select value={newFileDir} onChange={(e) => setNewFileDir(e.target.value)} className={`${roundedClass} border px-2 py-1.5 text-sm`}>
-                    {ALLOWED_DIRS.map((d) => <option key={d} value={d}>{d}/</option>)}
-                  </select>
+                  <Select value={newFileDir} onValueChange={setNewFileDir}>
+                    <SelectTrigger className={`${roundedClass} h-9 w-[140px] border-[var(--input-border)] bg-[var(--input-bg)]`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="border-[var(--border)] bg-[var(--card)] text-[var(--foreground)]">
+                      {ALLOWED_DIRS.map((d) => (
+                        <SelectItem key={d} value={d}>{d}/</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="flex-1">
                   <label className="mb-1 block text-xs font-medium" style={{ color: 'var(--muted-foreground)' }}>文件名</label>

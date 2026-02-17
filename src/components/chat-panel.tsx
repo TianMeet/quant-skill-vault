@@ -7,6 +7,8 @@ import { useChatPanel } from '@/lib/chat/chat-context'
 import { useChat } from '@/lib/chat/use-chat'
 import { ChatMessage, StreamingMessage } from './chat-message'
 import { ChatSkillPreview } from './chat-skill-preview'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 
 export function ChatPanel() {
   const pathname = usePathname()
@@ -15,7 +17,6 @@ export function ChatPanel() {
     messages,
     isStreaming,
     streamingText,
-    pendingToolCall,
     sendMessage,
     createSkill,
     stopStreaming,
@@ -140,22 +141,26 @@ export function ChatPanel() {
             )}
           </div>
           <div className="flex items-center gap-1">
-            <button
+            <Button
               onClick={handleReset}
-              className="p-1.5 rounded-md hover:opacity-70 transition-opacity"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-md"
               title="重置对话"
               aria-label="重置对话"
             >
               <RotateCcw className="h-3.5 w-3.5" style={{ color: 'var(--muted-foreground)' }} />
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={close}
-              className="p-1.5 rounded-md hover:opacity-70 transition-opacity"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-md"
               title="关闭"
               aria-label="关闭聊天面板"
             >
               <X className="h-4 w-4" style={{ color: 'var(--muted-foreground)' }} />
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -219,37 +224,40 @@ export function ChatPanel() {
             className="flex items-end gap-2 rounded-xl border px-3 py-2"
             style={{ borderColor: 'var(--border)', background: 'var(--card)' }}
           >
-            <textarea
+            <Textarea
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="描述你想创建的 Skill..."
               rows={1}
-              className="flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-[var(--muted-foreground)]"
+              density="compact"
+              className="flex-1 min-h-[24px] resize-none border-0 bg-transparent px-0 py-0 text-sm shadow-none placeholder:text-[var(--muted-foreground)] focus-visible:ring-0"
               style={{ maxHeight: '120px', minHeight: '24px' }}
               disabled={isStreaming}
               aria-label="输入消息"
             />
             {isStreaming ? (
-              <button
+              <Button
                 onClick={stopStreaming}
-                className="shrink-0 p-1.5 rounded-lg transition-opacity hover:opacity-70"
-                style={{ color: 'var(--danger)' }}
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0 rounded-lg text-[var(--danger)]"
                 aria-label="停止生成"
               >
                 <Square className="h-4 w-4" />
-              </button>
+              </Button>
             ) : (
-              <button
+              <Button
                 onClick={handleSend}
                 disabled={!input.trim()}
-                className="shrink-0 p-1.5 rounded-lg transition-opacity hover:opacity-90 disabled:opacity-30"
-                style={{ color: 'var(--accent)' }}
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0 rounded-lg text-[var(--accent)] disabled:opacity-30"
                 aria-label="发送消息"
               >
                 <Send className="h-4 w-4" />
-              </button>
+              </Button>
             )}
           </div>
           <p className="text-[10px] mt-1.5 text-center" style={{ color: 'var(--muted-foreground)' }}>

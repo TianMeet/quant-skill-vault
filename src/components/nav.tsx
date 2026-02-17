@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { Layers, Plus, MessageSquarePlus } from 'lucide-react'
 import { useChatPanel } from '@/lib/chat/chat-context'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { Button } from '@/components/ui/button'
 
 export function Nav() {
   const pathname = usePathname()
@@ -55,24 +56,22 @@ export function Nav() {
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <button
+          <Button
             onClick={toggle}
-            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium border transition-all hover:opacity-80 active:scale-[0.97]"
-            style={{ borderColor: 'var(--border)' }}
+            variant="outline"
+            className="rounded-lg px-3"
             title="AI 创建 Skill"
             aria-label="打开 AI 聊天面板"
           >
             <MessageSquarePlus className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
             <span className="hidden sm:inline">AI 对话</span>
-          </button>
-          <Link
-            href="/skills/new"
-            className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium text-white transition-all hover:opacity-90 active:scale-[0.97]"
-            style={{ background: 'var(--accent)' }}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            新建 Skill
-          </Link>
+          </Button>
+          <Button asChild className="rounded-lg px-3.5">
+            <Link href="/skills/new">
+              <Plus className="h-3.5 w-3.5" />
+              新建 Skill
+            </Link>
+          </Button>
         </div>
       </div>
     </header>

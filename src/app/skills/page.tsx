@@ -1,8 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { Search, Download, ArrowRight, Package } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 interface Skill {
   id: number
@@ -26,20 +29,12 @@ export default function SkillsListPage() {
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    fetchTags()
-  }, [])
-
-  useEffect(() => {
-    fetchSkills()
-  }, [query, selectedTags])
-
-  async function fetchTags() {
+  const fetchTags = useCallback(async () => {
     const res = await fetch('/api/tags')
     if (res.ok) setTags(await res.json())
-  }
+  }, [])
 
-  async function fetchSkills() {
+  const fetchSkills = useCallback(async () => {
     setLoading(true)
     const params = new URLSearchParams()
     if (query) params.set('query', query)
@@ -47,7 +42,17 @@ export default function SkillsListPage() {
     const res = await fetch(`/api/skills?${params}`)
     if (res.ok) setSkills(await res.json())
     setLoading(false)
-  }
+  }, [query, selectedTags])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchTags()
+  }, [fetchTags])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchSkills()
+  }, [fetchSkills])
 
   function toggleTag(tag: string) {
     setSelectedTags((prev) =>
@@ -87,34 +92,27 @@ export default function SkillsListPage() {
       <div className="mb-6 space-y-3">
         <div className="relative">
           <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'var(--muted-foreground)' }} />
-          <input
+          <Input
             type="text"
             placeholder="搜索 Skill..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="w-full rounded-lg border py-2.5 pl-10 pr-4 text-sm focus:outline-none"
-            style={{
-              background: 'var(--card)',
-              borderColor: 'var(--border)',
-            }}
+            className="w-full rounded-lg py-2.5 pl-10 pr-4 text-sm"
           />
         </div>
 
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {tags.map((tag) => (
-              <button
+              <Button
                 key={tag.id}
                 onClick={() => toggleTag(tag.name)}
-                className="rounded-lg px-3 py-1.5 text-xs font-medium transition-all"
-                style={{
-                  background: selectedTags.includes(tag.name) ? 'var(--accent)' : 'var(--muted)',
-                  color: selectedTags.includes(tag.name) ? 'white' : 'var(--muted-foreground)',
-                }}
+                variant={selectedTags.includes(tag.name) ? 'default' : 'secondary'}
+                className="h-auto rounded-lg px-3 py-1.5 text-xs font-medium"
               >
                 {tag.name}
                 <span className="ml-1 opacity-60">{tag.count}</span>
-              </button>
+              </Button>
             ))}
           </div>
         )}
@@ -146,14 +144,12 @@ export default function SkillsListPage() {
           <p className="mt-1 text-sm" style={{ color: 'var(--muted-foreground)' }}>
             创建你的第一个 Skill 协议开始使用
           </p>
-          <Link
-            href="/skills/new"
-            className="mt-4 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white"
-            style={{ background: 'var(--accent)' }}
-          >
-            创建 Skill
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
+          <Button asChild className="mt-4 rounded-lg">
+            <Link href="/skills/new">
+              创建 Skill
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </Button>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -167,14 +163,15 @@ export default function SkillsListPage() {
                 <h3 className="font-semibold text-[15px] leading-snug group-hover:opacity-80 transition-opacity">
                   {skill.title}
                 </h3>
-                <button
+                <Button
                   onClick={(e) => handleExportZip(e, skill.id, skill.slug)}
-                  className="shrink-0 rounded-md p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                  style={{ color: 'var(--muted-foreground)' }}
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
                   title="导出 ZIP"
                 >
                   <Download className="h-3.5 w-3.5" />
-                </button>
+                </Button>
               </div>
               <p
                 className="mt-2 text-sm leading-relaxed line-clamp-2"
@@ -185,13 +182,13 @@ export default function SkillsListPage() {
               {skill.tags.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {skill.tags.map((tag) => (
-                    <span
+                    <Badge
                       key={tag}
+                      variant="secondary"
                       className="rounded-md px-2 py-0.5 text-xs font-medium"
-                      style={{ background: 'var(--muted)', color: 'var(--muted-foreground)' }}
                     >
                       {tag}
-                    </span>
+                    </Badge>
                   ))}
                 </div>
               )}

@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Download, Edit, Trash2, AlertCircle, CheckCircle, File, ChevronLeft, Shield, Zap, FlaskConical } from 'lucide-react'
 import type { SkillGuardrails, SkillTestCase } from '@/lib/types'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 
 interface SkillDetail {
   id: number
@@ -39,6 +41,7 @@ interface LintError {
 export default function SkillDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const skillId = Array.isArray(params.id) ? params.id[0] : params.id
   const [skill, setSkill] = useState<SkillDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [lintErrors, setLintErrors] = useState<LintError[]>([])
@@ -46,29 +49,33 @@ export default function SkillDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [files, setFiles] = useState<SkillFileItem[]>([])
 
-  useEffect(() => {
-    fetchSkill()
-    fetchFiles()
-  }, [params.id])
-
-  async function fetchSkill() {
+  const fetchSkill = useCallback(async () => {
+    if (!skillId) return
     setLoading(true)
-    const res = await fetch(`/api/skills/${params.id}`)
+    const res = await fetch(`/api/skills/${skillId}`)
     if (res.ok) {
       setSkill(await res.json())
     }
     setLoading(false)
-  }
+  }, [skillId])
 
-  async function fetchFiles() {
-    const res = await fetch(`/api/skills/${params.id}/files`)
+  const fetchFiles = useCallback(async () => {
+    if (!skillId) return
+    const res = await fetch(`/api/skills/${skillId}/files`)
     if (res.ok) setFiles(await res.json())
-  }
+  }, [skillId])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchSkill()
+    void fetchFiles()
+  }, [fetchSkill, fetchFiles])
 
   async function handleDelete() {
+    if (!skillId) return
     if (!confirm('确定删除该 Skill？')) return
     setDeleting(true)
-    await fetch(`/api/skills/${params.id}`, { method: 'DELETE' })
+    await fetch(`/api/skills/${skillId}`, { method: 'DELETE' })
     router.push('/skills')
   }
 
@@ -134,33 +141,31 @@ export default function SkillDetailPage() {
           {skill.tags.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1.5">
               {skill.tags.map((tag) => (
-                <span
+                <Badge
                   key={tag}
+                  variant="secondary"
                   className="rounded-md px-2.5 py-0.5 text-xs font-medium"
-                  style={{ background: 'var(--muted)', color: 'var(--muted-foreground)' }}
                 >
                   {tag}
-                </span>
+                </Badge>
               ))}
             </div>
           )}
         </div>
         <div className="flex gap-2 ml-4">
-          <Link
-            href={`/skills/${skill.id}/edit`}
-            className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium border transition-colors"
-            style={{ borderColor: 'var(--border)', background: 'var(--card)' }}
-          >
-            <Edit className="h-3.5 w-3.5" /> 编辑
-          </Link>
-          <button
+          <Button asChild variant="outline" className="rounded-lg">
+            <Link href={`/skills/${skill.id}/edit`}>
+              <Edit className="h-3.5 w-3.5" /> 编辑
+            </Link>
+          </Button>
+          <Button
             onClick={handleDelete}
             disabled={deleting}
-            className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors disabled:opacity-50"
-            style={{ background: 'var(--danger-light)', color: 'var(--danger)' }}
+            variant="destructive"
+            className="rounded-lg"
           >
             <Trash2 className="h-3.5 w-3.5" /> 删除
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -342,13 +347,13 @@ export default function SkillDetailPage() {
           <h2 className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--muted-foreground)' }}>
             导出
           </h2>
-          <button
+          <Button
             onClick={handleLint}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors"
-            style={{ background: 'var(--foreground)' }}
+            variant="secondary"
+            className="rounded-lg text-sm font-medium"
           >
             运行校验
-          </button>
+          </Button>
 
           {lintErrors.length > 0 && (
             <div className="mt-4 rounded-lg p-4" style={{ background: 'var(--danger-light)' }}>
@@ -373,28 +378,17 @@ export default function SkillDetailPage() {
                 <p className="text-sm font-medium" style={{ color: 'var(--success)' }}>校验通过</p>
               </div>
               <div className="flex gap-2">
-                <a
-                  href={`/api/skills/${skill.id}/export.zip`}
-                  data-testid="export-zip-btn"
-                  className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white"
-                  style={{ background: 'var(--accent)' }}
-                >
-                  <Download className="h-3.5 w-3.5" /> 导出 ZIP
-                </a>
-                <a
-                  href={`/api/skills/${skill.id}/export.md`}
-                  className="rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
-                  style={{ borderColor: 'var(--border)', background: 'var(--card)' }}
-                >
-                  导出 MD
-                </a>
-                <a
-                  href={`/api/skills/${skill.id}/export.json`}
-                  className="rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
-                  style={{ borderColor: 'var(--border)', background: 'var(--card)' }}
-                >
-                  导出 JSON
-                </a>
+                <Button asChild className="rounded-lg">
+                  <a href={`/api/skills/${skill.id}/export.zip`} data-testid="export-zip-btn">
+                    <Download className="h-3.5 w-3.5" /> 导出 ZIP
+                  </a>
+                </Button>
+                <Button asChild variant="outline" className="rounded-lg">
+                  <a href={`/api/skills/${skill.id}/export.md`}>导出 MD</a>
+                </Button>
+                <Button asChild variant="outline" className="rounded-lg">
+                  <a href={`/api/skills/${skill.id}/export.json`}>导出 JSON</a>
+                </Button>
               </div>
             </div>
           )}

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, ChevronDown, ChevronUp, ExternalLink, Loader2 } from 'lucide-react'
 import type { ToolCallData } from '@/lib/chat/types'
+import { Button } from '@/components/ui/button'
 
 interface Props {
   toolCall: ToolCallData
@@ -52,13 +53,15 @@ export function ChatSkillPreview({ toolCall, onConfirm, onEdit, created }: Props
               {skill.steps.length} 步骤 · {skill.triggers.length} 触发词 · {skill.tests.length} 测试
             </p>
           </div>
-          <button
+          <Button
             onClick={() => setExpanded(!expanded)}
-            className="p-1 rounded-md hover:opacity-70"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 rounded-md"
             aria-label={expanded ? '收起详情' : '展开详情'}
           >
             {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -137,11 +140,11 @@ export function ChatSkillPreview({ toolCall, onConfirm, onEdit, created }: Props
       {/* Actions */}
       {!created?.success && (
         <div className="px-4 py-3 border-t flex gap-2" style={{ borderColor: 'var(--border)' }}>
-          <button
+          <Button
             onClick={handleCreate}
             disabled={creating}
-            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-white transition-all hover:opacity-90 disabled:opacity-50"
-            style={{ background: 'var(--accent)' }}
+            size="sm"
+            className="h-7 rounded-lg px-3 text-xs"
           >
             {creating ? (
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -149,16 +152,17 @@ export function ChatSkillPreview({ toolCall, onConfirm, onEdit, created }: Props
               <Check className="h-3 w-3" />
             )}
             创建 Skill
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={handleEditInForm}
             disabled={creating}
-            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium border transition-all hover:opacity-70 disabled:opacity-50"
-            style={{ borderColor: 'var(--border)' }}
+            variant="outline"
+            size="sm"
+            className="h-7 rounded-lg px-3 text-xs"
           >
             <ExternalLink className="h-3 w-3" />
             在表单中编辑
-          </button>
+          </Button>
         </div>
       )}
 

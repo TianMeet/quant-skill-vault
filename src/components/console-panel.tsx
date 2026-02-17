@@ -7,6 +7,8 @@ import { useSkillStore } from '@/lib/stores/skill-store'
 import { ChatMessage, StreamingMessage } from './chat-message'
 import { ChatSkillPreview } from './chat-skill-preview'
 import type { SkillDraft } from '@/lib/chat/types'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 
 export function ConsolePanel() {
   const store = useSkillStore()
@@ -27,7 +29,6 @@ export function ConsolePanel() {
     messages,
     isStreaming,
     streamingText,
-    pendingToolCall,
     sendMessage,
     createSkill,
     stopStreaming,
@@ -39,25 +40,24 @@ export function ConsolePanel() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const progress = useMemo(() => {
-    const s = store
     let filled = 0
     const total = 6
-    if (s.title) filled++
-    if (s.summary) filled++
-    if (s.steps.filter(Boolean).length >= 3) filled++
-    if (s.triggers.filter(Boolean).length >= 3) filled++
+    if (store.title) filled++
+    if (store.summary) filled++
+    if (store.steps.filter(Boolean).length >= 3) filled++
+    if (store.triggers.filter(Boolean).length >= 3) filled++
     if (
-      s.guardrails.stop_conditions.filter(Boolean).length >= 1 &&
-      s.guardrails.escalation
+      store.guardrails.stop_conditions.filter(Boolean).length >= 1 &&
+      store.guardrails.escalation
     ) filled++
     if (
-      s.tests.length >= 1 &&
-      s.tests[0]?.name &&
-      s.tests[0]?.input &&
-      s.tests[0]?.expected_output
+      store.tests.length >= 1 &&
+      store.tests[0]?.name &&
+      store.tests[0]?.input &&
+      store.tests[0]?.expected_output
     ) filled++
     return { filled, total }
-  }, [store.title, store.summary, store.steps, store.triggers, store.guardrails, store.tests])
+  }, [store])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -106,14 +106,16 @@ export function ConsolePanel() {
             </span>
           )}
         </div>
-        <button
+        <Button
           onClick={handleReset}
-          className="p-1 hover:opacity-70 transition-opacity"
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 p-0"
           title="重置对话"
           aria-label="重置对话"
         >
           <RotateCcw className="h-3 w-3" style={{ color: 'var(--muted-foreground)' }} />
-        </button>
+        </Button>
       </div>
 
       {/* 消息列表 */}
@@ -127,14 +129,15 @@ export function ConsolePanel() {
             </p>
             <div className="space-y-1.5 w-full max-w-[240px]">
               {['帮我创建一个代码审查 Skill', '创建一个数据分析流程 Skill', '我需要一个自动化测试 Skill'].map((prompt) => (
-                <button
+                <Button
                   key={prompt}
                   onClick={() => sendMessage(prompt)}
-                  className="w-full text-left text-[11px] font-mono px-3 py-2 border transition-colors hover:border-[var(--console-accent)]"
+                  variant="outline"
+                  className="h-auto w-full justify-start rounded-none border-[var(--console-border)] bg-transparent px-3 py-2 text-left text-[11px] font-mono text-[var(--console-muted)] hover:border-[var(--console-accent)] hover:bg-transparent"
                   style={{ borderColor: 'var(--console-border)', color: 'var(--console-muted)' }}
                 >
                   {prompt}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -173,37 +176,40 @@ export function ConsolePanel() {
           className="flex items-end gap-2 border rounded-md px-2.5 py-1.5"
           style={{ background: 'var(--card)', borderColor: 'var(--border)' }}
         >
-          <textarea
+          <Textarea
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="描述你想创建的 Skill..."
             rows={1}
-            className="flex-1 resize-none bg-transparent text-sm outline-none"
+            density="compact"
+            className="flex-1 min-h-[20px] resize-none border-0 bg-transparent px-0 py-0 text-sm shadow-none focus-visible:ring-0"
             style={{ maxHeight: '80px', minHeight: '20px', color: 'var(--foreground)' }}
             disabled={isStreaming}
             aria-label="输入消息"
           />
           {isStreaming ? (
-            <button
+            <Button
               onClick={stopStreaming}
-              className="shrink-0 p-1 rounded-md transition-opacity hover:opacity-70"
-              style={{ color: 'var(--danger)' }}
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 shrink-0 rounded-md p-0 text-[var(--danger)]"
               aria-label="停止生成"
             >
               <Square className="h-4 w-4" />
-            </button>
+            </Button>
           ) : (
-            <button
+            <Button
               onClick={handleSend}
               disabled={!input.trim()}
-              className="shrink-0 p-1 rounded-md transition-opacity hover:opacity-90 disabled:opacity-30"
-              style={{ color: 'var(--accent)' }}
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 shrink-0 rounded-md p-0 text-[var(--accent)] disabled:opacity-30"
               aria-label="发送消息"
             >
               <Send className="h-4 w-4" />
-            </button>
+            </Button>
           )}
         </div>
         <p className="text-[9px] font-mono mt-1 text-center" style={{ color: 'var(--muted-foreground)' }}>
