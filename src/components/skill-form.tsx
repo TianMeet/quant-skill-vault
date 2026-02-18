@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SkillData } from '@/lib/types'
 import { useSkillStore } from '@/lib/stores/skill-store'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { useNotify } from '@/components/ui/notify-provider'
 import { SkillFormAuthorTab } from '@/components/skill-form/author-tab'
 import { SkillFormEnhanceTab, type AiChangeSet, type AiLintPreview } from '@/components/skill-form/enhance-tab'
 import { SkillFormExportTab } from '@/components/skill-form/export-tab'
@@ -23,10 +25,15 @@ interface SkillFormProps {
   variant?: 'default' | 'industrial'
 }
 
+const DRAFT_STORAGE_KEY = 'qsv:new-skill-draft:v1'
+const AUTOSAVE_DEBOUNCE_MS = 450
+
 export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFormProps) {
   const router = useRouter()
+  const notify = useNotify()
   const isEdit = !!skillId
   const isIndustrial = variant === 'industrial'
+  const restoredDraftRef = useRef(false)
 
   // Zustand store
   const store = useSkillStore()
@@ -62,9 +69,15 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   const [newFileDir, setNewFileDir] = useState('references')
   const [newFileName, setNewFileName] = useState('')
   const [fileSaving, setFileSaving] = useState(false)
+  const [fileMoving, setFileMoving] = useState(false)
+  const [fileDeleting, setFileDeleting] = useState(false)
+  const [pendingDeleteFilePath, setPendingDeleteFilePath] = useState<string | null>(null)
   const [tagInput, setTagInput] = useState('')
   const [availableTags, setAvailableTags] = useState<string[]>([])
   const [showValidation, setShowValidation] = useState(false)
+  const [draftHydrated, setDraftHydrated] = useState(false)
+  const [draftRestoredAt, setDraftRestoredAt] = useState<number | null>(null)
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
 
   // AI tab state (保持本地)
   const [aiInstruction, setAiInstruction] = useState('')
@@ -87,6 +100,137 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   useEffect(() => {
     if (skillId) loadFiles()
   }, [skillId, loadFiles])
+
+  useEffect(() => {
+    if (isEdit || restoredDraftRef.current || typeof window === 'undefined') {
+      setDraftHydrated(true)
+      return
+    }
+
+    restoredDraftRef.current = true
+    try {
+      const raw = window.localStorage.getItem(DRAFT_STORAGE_KEY)
+      if (!raw) return
+
+      const parsed = JSON.parse(raw) as {
+        data?: Partial<SkillData & { tags: string[]; activeTab: string }>
+      }
+      const data = parsed?.data
+      if (!data || typeof data !== 'object') return
+
+      initFromData({
+        title: typeof data.title === 'string' ? data.title : '',
+        summary: typeof data.summary === 'string' ? data.summary : '',
+        inputs: typeof data.inputs === 'string' ? data.inputs : '',
+        outputs: typeof data.outputs === 'string' ? data.outputs : '',
+        steps: Array.isArray(data.steps) ? data.steps.map((item) => String(item)) : ['', '', ''],
+        risks: typeof data.risks === 'string' ? data.risks : '',
+        triggers: Array.isArray(data.triggers) ? data.triggers.map((item) => String(item)) : ['', '', ''],
+        guardrails:
+          data.guardrails && typeof data.guardrails === 'object'
+            ? data.guardrails
+            : {
+                allowed_tools: [],
+                disable_model_invocation: false,
+                user_invocable: true,
+                stop_conditions: [''],
+                escalation: 'ASK_HUMAN',
+              },
+        tests:
+          Array.isArray(data.tests) && data.tests.length > 0
+            ? data.tests
+            : [{ name: '', input: '', expected_output: '' }],
+        tags: Array.isArray(data.tags) ? data.tags.map((item) => String(item)) : [],
+      })
+
+      if (typeof data.activeTab === 'string') {
+        setUIField('activeTab', data.activeTab)
+      }
+
+      setDraftRestoredAt(Date.now())
+    } catch {
+      // ignore invalid local draft payload
+    } finally {
+      setDraftHydrated(true)
+    }
+  }, [isEdit, initFromData, setUIField])
+
+  const persistLocalDraft = useCallback(
+    (markSavedAt = true) => {
+      if (isEdit || !draftHydrated || typeof window === 'undefined') return
+      try {
+        window.localStorage.setItem(
+          DRAFT_STORAGE_KEY,
+          JSON.stringify({
+            version: 1,
+            updatedAt: Date.now(),
+            data: {
+              title,
+              summary,
+              inputs,
+              outputs,
+              steps,
+              risks,
+              triggers,
+              guardrails,
+              tests,
+              tags,
+              activeTab,
+            },
+          })
+        )
+        if (markSavedAt) setDraftSavedAt(Date.now())
+      } catch {
+        // ignore localStorage write failure
+      }
+    },
+    [
+      isEdit,
+      draftHydrated,
+      title,
+      summary,
+      inputs,
+      outputs,
+      steps,
+      risks,
+      triggers,
+      guardrails,
+      tests,
+      tags,
+      activeTab,
+    ]
+  )
+
+  useEffect(() => {
+    if (isEdit || !draftHydrated || typeof window === 'undefined') return
+
+    const timer = window.setTimeout(() => {
+      persistLocalDraft(true)
+    }, AUTOSAVE_DEBOUNCE_MS)
+
+    return () => window.clearTimeout(timer)
+  }, [isEdit, draftHydrated, persistLocalDraft])
+
+  useEffect(() => {
+    if (isEdit || !draftHydrated || typeof window === 'undefined') return
+
+    const flushDraft = () => {
+      persistLocalDraft(false)
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') flushDraft()
+    }
+
+    window.addEventListener('pagehide', flushDraft)
+    window.addEventListener('beforeunload', flushDraft)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('pagehide', flushDraft)
+      window.removeEventListener('beforeunload', flushDraft)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [isEdit, draftHydrated, persistLocalDraft])
 
   const loadTags = useCallback(async () => {
     try {
@@ -124,13 +268,18 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       })
       if (res.ok) {
         setNewFileName('')
+        notify.success('文件已创建')
         await loadFiles()
       } else {
         const data = await res.json().catch(() => ({}))
-        setUIField('error', toUserFriendlyErrorMessage(data.error || `创建文件失败（${res.status}）`))
+        const msg = toUserFriendlyErrorMessage(data.error || `创建文件失败（${res.status}）`)
+        setUIField('error', msg)
+        notify.error(msg)
       }
     } catch {
-      setUIField('error', '创建文件时网络异常，请重试。')
+      const msg = '创建文件时网络异常，请重试。'
+      setUIField('error', msg)
+      notify.error(msg)
     }
     setFileSaving(false)
   }
@@ -159,42 +308,74 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setUIField('error', toUserFriendlyErrorMessage(data.error || '保存文件失败'))
+        const msg = toUserFriendlyErrorMessage(data.error || '保存文件失败')
+        setUIField('error', msg)
+        notify.error(msg)
+      } else {
+        notify.success('文件已保存')
       }
     } catch {
-      setUIField('error', '保存文件时网络异常，请重试。')
+      const msg = '保存文件时网络异常，请重试。'
+      setUIField('error', msg)
+      notify.error(msg)
     }
     setFileSaving(false)
     await loadFiles()
   }
 
   async function handleDeleteFile(path: string) {
-    if (!skillId || !confirm(`Delete ${path}?`)) return
+    if (!skillId) return
+    setPendingDeleteFilePath(path)
+  }
+
+  async function confirmDeleteFile() {
+    if (!skillId || !pendingDeleteFilePath) return
+    const path = pendingDeleteFilePath
     setUIField('error', '')
+    setFileDeleting(true)
     try {
       const res = await fetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(path)}`, { method: 'DELETE' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setUIField('error', toUserFriendlyErrorMessage(data.error || '删除文件失败'))
+        const msg = toUserFriendlyErrorMessage(data.error || '删除文件失败')
+        setUIField('error', msg)
+        notify.error(msg)
         return
       }
     } catch {
-      setUIField('error', '删除文件时网络异常，请重试。')
+      const msg = '删除文件时网络异常，请重试。'
+      setUIField('error', msg)
+      notify.error(msg)
       return
+    } finally {
+      setFileDeleting(false)
+      setPendingDeleteFilePath(null)
     }
     if (selectedFile?.path === path) { setSelectedFile(null); setFileContent('') }
     await loadFiles()
+    notify.success('文件已删除')
   }
 
-  async function handleUploadFile(e: React.ChangeEvent<HTMLInputElement>) {
-    if (!skillId || !e.target.files?.[0]) return
-    const file = e.target.files[0]
-    const path = `assets/${file.name}`
-    const reader = new FileReader()
+  function readFileAsDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onerror = () => reject(new Error('FILE_READ_FAILED'))
+      reader.onload = () => resolve(String(reader.result || ''))
+      reader.readAsDataURL(file)
+    })
+  }
+
+  async function handleUploadFiles(inputFiles: File[]) {
+    if (!skillId || inputFiles.length === 0) return
+    setFileSaving(true)
     setUIField('error', '')
-    reader.onload = async () => {
-      const base64 = (reader.result as string).split(',')[1]
-      try {
+
+    try {
+      let uploadedCount = 0
+      for (const file of inputFiles) {
+        const dataUrl = await readFileAsDataUrl(file)
+        const base64 = dataUrl.split(',')[1] || ''
+        const path = `assets/${file.name}`
         const res = await fetch(`/api/skills/${skillId}/files`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -202,16 +383,72 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
         })
         if (!res.ok) {
           const data = await res.json().catch(() => ({}))
-          setUIField('error', toUserFriendlyErrorMessage(data.error || `上传文件失败（${res.status}）`))
-          return
+          const msg = toUserFriendlyErrorMessage(data.error || `上传文件失败（${res.status}）`)
+          setUIField('error', msg)
+          notify.error(msg)
+          break
         }
-        await loadFiles()
-      } catch {
-        setUIField('error', '上传文件时网络异常，请重试。')
+        uploadedCount += 1
       }
+      await loadFiles()
+      if (uploadedCount > 0) {
+        notify.success(`已上传 ${uploadedCount} 个文件`)
+      }
+    } catch {
+      const msg = '上传文件时网络异常，请重试。'
+      setUIField('error', msg)
+      notify.error(msg)
+    } finally {
+      setFileSaving(false)
     }
-    reader.readAsDataURL(file)
+  }
+
+  async function handleUploadFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(e.target.files || [])
+    if (selected.length > 0) await handleUploadFiles(selected)
     e.target.value = ''
+  }
+
+  async function handleMoveFile(fromPath: string, toPath: string) {
+    if (!skillId || !fromPath || !toPath) return
+    setFileMoving(true)
+    setUIField('error', '')
+    try {
+      const res = await fetch(`/api/skills/${skillId}/files`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fromPath, toPath }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        const msg = toUserFriendlyErrorMessage(data.error || `移动文件失败（${res.status}）`)
+        setUIField('error', msg)
+        notify.error(msg)
+        return
+      }
+
+      if (selectedFile?.path === fromPath) {
+        setSelectedFile({ ...selectedFile, path: toPath })
+      }
+      await loadFiles()
+      notify.success('文件路径已更新')
+    } catch {
+      const msg = '移动文件时网络异常，请重试。'
+      setUIField('error', msg)
+      notify.error(msg)
+    } finally {
+      setFileMoving(false)
+    }
+  }
+
+  async function loadAiCurrentFile(path: string): Promise<{ exists: boolean; isBinary: boolean; contentText: string | null }> {
+    if (!skillId) return { exists: false, isBinary: false, contentText: null }
+    const res = await fetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(path)}`)
+    if (res.status === 404) return { exists: false, isBinary: false, contentText: null }
+    if (!res.ok) throw new Error(`LOAD_FILE_FAILED_${res.status}`)
+    const data = await res.json().catch(() => ({}))
+    if (data.isBinary) return { exists: true, isBinary: true, contentText: null }
+    return { exists: true, isBinary: false, contentText: typeof data.contentText === 'string' ? data.contentText : '' }
   }
 
   function guessMime(name: string): string {
@@ -243,13 +480,21 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setUIField('error', toUserFriendlyErrorMessage(data.error || '保存失败'))
+        const msg = toUserFriendlyErrorMessage(data.error || '保存失败')
+        setUIField('error', msg)
+        notify.error(msg)
         return
       }
       const data = await res.json()
+      notify.success(isEdit ? 'Skill 已更新' : 'Skill 已创建')
+      if (!isEdit && typeof window !== 'undefined') {
+        window.localStorage.removeItem(DRAFT_STORAGE_KEY)
+      }
       router.push(`/skills/${data.id}`)
     } catch {
-      setUIField('error', '保存时网络异常，请重试。')
+      const msg = '保存时网络异常，请重试。'
+      setUIField('error', msg)
+      notify.error(msg)
     } finally {
       setUIField('saving', false)
     }
@@ -264,11 +509,15 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       const data = await res.json()
       if (data.valid) {
         setUIField('lintPassed', true)
+        notify.success('校验通过')
       } else {
         setUIField('lintErrors', Array.isArray(data.errors) ? data.errors : [])
+        notify.error('校验未通过，请根据提示修复后重试。')
       }
     } catch {
-      setUIField('error', '运行校验失败，请稍后重试。')
+      const msg = '运行校验失败，请稍后重试。'
+      setUIField('error', msg)
+      notify.error(msg)
     }
   }
 
@@ -302,6 +551,37 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     !tags.includes(normalizedTagInput) &&
     !availableTags.includes(normalizedTagInput)
 
+  const draftTip = !isEdit
+    ? draftRestoredAt
+      ? `已恢复本地草稿（${new Date(draftRestoredAt).toLocaleTimeString()}）`
+      : draftHydrated
+        ? '已开启本地自动草稿'
+        : '正在检查本地草稿...'
+    : ''
+  const draftSaveTimeLabel = !isEdit && draftSavedAt ? `最近保存 ${new Date(draftSavedAt).toLocaleTimeString()}` : ''
+  const aiCurrentSkill = useMemo(
+    () => ({
+      title,
+      summary,
+      inputs,
+      outputs,
+      steps,
+      risks,
+      triggers,
+      guardrails,
+      tests,
+      tags,
+    }),
+    [title, summary, inputs, outputs, steps, risks, triggers, guardrails, tests, tags]
+  )
+
+  function handleClearLocalDraft() {
+    if (typeof window === 'undefined') return
+    window.localStorage.removeItem(DRAFT_STORAGE_KEY)
+    setDraftRestoredAt(null)
+    setDraftSavedAt(null)
+  }
+
   const tabs = [
     { id: 'author', label: '编写' },
     { id: 'triggers', label: '触发词' },
@@ -332,13 +612,18 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
         const details = Array.isArray(data.details)
           ? data.details.filter((d: unknown): d is string => typeof d === 'string' && d.trim().length > 0)
           : []
-        setAiError(details.length > 0 ? `${baseError}（${details.slice(0, 2).join('；')}）` : baseError)
+        const msg = details.length > 0 ? `${baseError}（${details.slice(0, 2).join('；')}）` : baseError
+        setAiError(msg)
+        notify.error(msg)
         return
       }
       setAiChangeSet(data.changeSet)
       setAiLintPreview(data.lintPreview)
+      notify.success('已生成 AI 变更建议')
     } catch {
-      setAiError('调用 AI 时网络异常，请重试。')
+      const msg = '调用 AI 时网络异常，请重试。'
+      setAiError(msg)
+      notify.error(msg)
     } finally {
       setAiLoading(false)
     }
@@ -360,13 +645,18 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
         const details = Array.isArray(data.errors)
           ? data.errors.filter((d: unknown): d is string => typeof d === 'string' && d.trim().length > 0)
           : []
-        setAiError(details.length > 0 ? `${baseError}（${details.slice(0, 2).join('；')}）` : baseError)
+        const msg = details.length > 0 ? `${baseError}（${details.slice(0, 2).join('；')}）` : baseError
+        setAiError(msg)
+        notify.error(msg)
         return
       }
       setAiApplied(true)
+      notify.success('AI 变更已应用')
       setTimeout(() => window.location.reload(), 1000)
     } catch {
-      setAiError('应用变更时网络异常，请重试。')
+      const msg = '应用变更时网络异常，请重试。'
+      setAiError(msg)
+      notify.error(msg)
     } finally {
       setAiApplying(false)
     }
@@ -399,6 +689,18 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
 
   return (
     <div className={isIndustrial ? 'min-h-full px-5 py-4 flex flex-col' : 'mx-auto max-w-4xl px-4 py-8'}>
+      <ConfirmDialog
+        open={!!pendingDeleteFilePath}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteFilePath(null)
+        }}
+        title="确认删除文件"
+        description={pendingDeleteFilePath ? `将删除文件 ${pendingDeleteFilePath}，此操作不可撤销。` : undefined}
+        confirmText="删除文件"
+        confirmVariant="destructive"
+        loading={fileDeleting}
+        onConfirm={() => void confirmDeleteFile()}
+      />
       <div className="flex-1">
       <div
         className={isIndustrial ? '-mx-5 sticky top-0 z-20 mb-5 px-5 pb-3 pt-4' : 'mb-5'}
@@ -416,9 +718,20 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
         <div className="mb-2 flex items-baseline justify-between">
           <h1 className={`${isIndustrial ? 'text-base' : 'text-2xl'} font-semibold`}>{isEdit ? '编辑 Skill' : '新建 Skill'}</h1>
           {!isEdit && (
-            <span className="text-[11px] font-mono" style={{ color: requiredStatus.filled === requiredStatus.total ? 'var(--success)' : 'var(--muted-foreground)' }}>
-              {requiredStatus.filled}/{requiredStatus.total} {requiredStatus.filled === requiredStatus.total ? '就绪' : '必填'}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-mono" style={{ color: requiredStatus.filled === requiredStatus.total ? 'var(--success)' : 'var(--muted-foreground)' }}>
+                {requiredStatus.filled}/{requiredStatus.total} {requiredStatus.filled === requiredStatus.total ? '就绪' : '必填'}
+              </span>
+              <Button
+                onClick={handleClearLocalDraft}
+                type="button"
+                variant="ghost"
+                size="sm"
+                className={`${roundedLgClass} h-6 px-2 text-[10px]`}
+              >
+                清空草稿
+              </Button>
+            </div>
           )}
         </div>
 
@@ -437,6 +750,11 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
               </div>
             ))}
           </div>
+        )}
+        {!isEdit && (
+          <p className="mb-3 text-[11px]" style={{ color: 'var(--muted-foreground)' }}>
+            {draftTip}{draftSaveTimeLabel ? ` · ${draftSaveTimeLabel}` : ''}
+          </p>
         )}
 
         {error && (
@@ -581,10 +899,13 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
             newFileName={newFileName}
             setNewFileName={setNewFileName}
             fileSaving={fileSaving}
+            fileMoving={fileMoving}
             handleCreateFile={handleCreateFile}
             handleUploadFile={handleUploadFile}
+            handleUploadFiles={handleUploadFiles}
             handleSelectFile={handleSelectFile}
             handleDeleteFile={handleDeleteFile}
+            handleMoveFile={handleMoveFile}
             handleSaveFile={handleSaveFile}
             setFileContent={setFileContent}
           />
@@ -608,6 +929,8 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
             aiApplied={aiApplied}
             aiPreviewFile={aiPreviewFile}
             setAiPreviewFile={setAiPreviewFile}
+            currentSkill={aiCurrentSkill}
+            loadCurrentFile={loadAiCurrentFile}
             handleAiPropose={handleAiPropose}
             handleAiApply={handleAiApply}
             clearAiChangeSet={() => { setAiChangeSet(null); setAiLintPreview(null); setAiPreviewFile(null) }}
@@ -623,6 +946,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
           lintPassed={lintPassed}
           isEdit={isEdit}
           skillId={skillId}
+          requiredStatus={requiredStatus}
           handleLint={handleLint}
         />
       )}

@@ -11,6 +11,26 @@ function isPrismaCode(err: unknown, code: string): boolean {
   return !!err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === code
 }
 
+const DEFAULT_PAGE = 1
+const DEFAULT_LIMIT = 9
+const MAX_LIMIT = 60
+
+const SORT_ORDERS: Record<string, { [key: string]: 'asc' | 'desc' }> = {
+  updated_desc: { updatedAt: 'desc' },
+  updated_asc: { updatedAt: 'asc' },
+  created_desc: { createdAt: 'desc' },
+  created_asc: { createdAt: 'asc' },
+  title_asc: { title: 'asc' },
+  title_desc: { title: 'desc' },
+}
+
+function parsePositiveInt(raw: string | null, fallback: number): number {
+  if (!raw) return fallback
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value <= 0) return fallback
+  return value
+}
+
 /**
  * GET /api/skills - 列表查询，支持 query 和 tags 过滤
  */
@@ -18,6 +38,15 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const query = searchParams.get('query') || ''
   const tagsParam = searchParams.get('tags') || ''
+  const pageRaw = searchParams.get('page')
+  const limitRaw = searchParams.get('limit')
+  const sortRaw = searchParams.get('sort') || 'updated_desc'
+  const shouldPaginate = !!(pageRaw || limitRaw || searchParams.get('sort'))
+
+  const page = parsePositiveInt(pageRaw, DEFAULT_PAGE)
+  const limit = Math.min(parsePositiveInt(limitRaw, DEFAULT_LIMIT), MAX_LIMIT)
+  const sort = SORT_ORDERS[sortRaw] ? sortRaw : 'updated_desc'
+  const orderBy = SORT_ORDERS[sort]
   const tagNames = tagsParam ? normalizeTagNames(tagsParam.split(',')) : []
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -47,13 +76,27 @@ export async function GET(request: NextRequest) {
         include: { tag: true },
       },
     },
-    orderBy: { updatedAt: 'desc' },
+    orderBy,
+    ...(shouldPaginate ? { skip: (page - 1) * limit, take: limit } : {}),
   })
 
   const result = skills.map((s) => ({
     ...s,
     tags: s.tags.map((st) => st.tag.name),
   }))
+
+  if (shouldPaginate) {
+    const total = await prisma.skill.count({ where })
+    const totalPages = Math.max(1, Math.ceil(total / limit))
+    return NextResponse.json({
+      items: result,
+      total,
+      page,
+      limit,
+      totalPages,
+      sort,
+    })
+  }
 
   return NextResponse.json(result)
 }

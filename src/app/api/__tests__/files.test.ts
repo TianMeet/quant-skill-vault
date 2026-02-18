@@ -194,6 +194,89 @@ describe('Files API', () => {
     })
   })
 
+  describe('PATCH /api/skills/:id/files - rename / move', () => {
+    it('renames a file path', async () => {
+      const skill = seedMockSkill(validSkillData)
+      const { POST, PATCH, GET } = await import('../skills/[id]/files/route')
+
+      await POST(
+        new Request('http://localhost/api/skills/1/files', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            path: 'references/rules.md',
+            content: '# Rules',
+            mime: 'text/markdown',
+            isBinary: false,
+          }),
+        }),
+        { params: Promise.resolve({ id: String(skill.id) }) }
+      )
+
+      const patchReq = new Request('http://localhost/api/skills/1/files', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromPath: 'references/rules.md',
+          toPath: 'examples/rules-v2.md',
+        }),
+      })
+      const patchRes = await PATCH(patchReq, { params: Promise.resolve({ id: String(skill.id) }) })
+      expect(patchRes.status).toBe(200)
+      const patchData = await patchRes.json()
+      expect(patchData.path).toBe('examples/rules-v2.md')
+
+      const listRes = await GET(new Request('http://localhost/api/skills/1/files'), {
+        params: Promise.resolve({ id: String(skill.id) }),
+      })
+      const files = await listRes.json()
+      expect(files[0].path).toBe('examples/rules-v2.md')
+    })
+
+    it('returns 409 when target path already exists', async () => {
+      const skill = seedMockSkill(validSkillData)
+      const { POST, PATCH } = await import('../skills/[id]/files/route')
+
+      await POST(
+        new Request('http://localhost/api/skills/1/files', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            path: 'references/rules.md',
+            content: '# Rules',
+            mime: 'text/markdown',
+            isBinary: false,
+          }),
+        }),
+        { params: Promise.resolve({ id: String(skill.id) }) }
+      )
+      await POST(
+        new Request('http://localhost/api/skills/1/files', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            path: 'examples/rules.md',
+            content: '# Rules 2',
+            mime: 'text/markdown',
+            isBinary: false,
+          }),
+        }),
+        { params: Promise.resolve({ id: String(skill.id) }) }
+      )
+
+      const patchReq = new Request('http://localhost/api/skills/1/files', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromPath: 'references/rules.md',
+          toPath: 'examples/rules.md',
+        }),
+      })
+      const patchRes = await PATCH(patchReq, { params: Promise.resolve({ id: String(skill.id) }) })
+      expect(patchRes.status).toBe(409)
+    })
+  })
+
   describe('DELETE /api/skills/:id/files?path=... - delete', () => {
     it('deletes a file', async () => {
       const skill = seedMockSkill(validSkillData)

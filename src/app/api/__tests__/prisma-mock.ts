@@ -99,6 +99,74 @@ function applyTagMutationOnSkill(skill: Record<string, unknown>, tagsData: Recor
   setSkillTags(skill, nextTags)
 }
 
+function filterSkillsByWhere(
+  input: Array<Record<string, unknown>>,
+  where?: Record<string, unknown>
+): Array<Record<string, unknown>> {
+  if (!where) return input
+  let results = [...input]
+
+  if (where.OR) {
+    const orConditions = where.OR as Array<Record<string, { contains?: string }>>
+    results = results.filter((skill) =>
+      orConditions.some((cond) => {
+        for (const [key, val] of Object.entries(cond)) {
+          if (val.contains && String(skill[key]).includes(val.contains)) return true
+        }
+        return false
+      })
+    )
+  }
+
+  if (where.tags && typeof where.tags === 'object') {
+    const some = (where.tags as { some?: Record<string, unknown> }).some || {}
+    if ('tag' in some) {
+      const tagNames = (some as { tag: { name: { in: string[] } } }).tag.name.in
+      results = results.filter((skill) =>
+        tagNames.some((name) => getSkillTags(skill).includes(name))
+      )
+    } else if ('tagId' in some) {
+      const tagId = Number((some as { tagId: number }).tagId)
+      const tag = mockTags.get(tagId)
+      const tagName = tag?.name as string | undefined
+      results = results.filter((skill) =>
+        !!tagName && getSkillTags(skill).includes(tagName)
+      )
+    }
+  }
+
+  return results
+}
+
+function sortSkills(
+  input: Array<Record<string, unknown>>,
+  orderBy?: Record<string, string> | Array<Record<string, string>>
+): Array<Record<string, unknown>> {
+  if (!orderBy) return input
+  const orderList = Array.isArray(orderBy) ? orderBy : [orderBy]
+  let results = [...input]
+
+  for (let i = orderList.length - 1; i >= 0; i--) {
+    const order = orderList[i] || {}
+    const [field, direction] = Object.entries(order)[0] || []
+    if (!field || !direction) continue
+
+    results = results.sort((a, b) => {
+      if (field === 'updatedAt' || field === 'createdAt') {
+        const ta = new Date(String(a[field])).getTime()
+        const tb = new Date(String(b[field])).getTime()
+        return direction === 'desc' ? tb - ta : ta - tb
+      }
+
+      const va = String(a[field] ?? '')
+      const vb = String(b[field] ?? '')
+      return direction === 'desc' ? vb.localeCompare(va) : va.localeCompare(vb)
+    })
+  }
+
+  return results
+}
+
 export function resetMockDb() {
   mockSkills.clear()
   mockTags.clear()
@@ -140,47 +208,22 @@ export function getMockFiles() {
 
 export const prismaMock = {
   skill: {
-    findMany: vi.fn(async (args?: { where?: Record<string, unknown>; include?: unknown; select?: Record<string, boolean>; orderBy?: Record<string, string> }) => {
+    findMany: vi.fn(async (args?: {
+      where?: Record<string, unknown>
+      include?: unknown
+      select?: Record<string, boolean>
+      orderBy?: Record<string, string> | Array<Record<string, string>>
+      skip?: number
+      take?: number
+    }) => {
       let results = Array.from(mockSkills.values())
+      results = filterSkillsByWhere(results, args?.where)
+      results = sortSkills(results, args?.orderBy)
 
-      if (args?.where) {
-        const where = args.where
-        if (where.OR) {
-          const orConditions = where.OR as Array<Record<string, { contains?: string }>>
-          results = results.filter((skill) =>
-            orConditions.some((cond) => {
-              for (const [key, val] of Object.entries(cond)) {
-                if (val.contains && String(skill[key]).includes(val.contains)) return true
-              }
-              return false
-            })
-          )
-        }
-
-        if (where.tags && typeof where.tags === 'object') {
-          const some = (where.tags as { some?: Record<string, unknown> }).some || {}
-          if ('tag' in some) {
-            const tagNames = (some as { tag: { name: { in: string[] } } }).tag.name.in
-            results = results.filter((skill) =>
-              tagNames.some((name) => getSkillTags(skill).includes(name))
-            )
-          } else if ('tagId' in some) {
-            const tagId = Number((some as { tagId: number }).tagId)
-            const tag = mockTags.get(tagId)
-            const tagName = tag?.name as string | undefined
-            results = results.filter((skill) =>
-              !!tagName && getSkillTags(skill).includes(tagName)
-            )
-          }
-        }
-      }
-
-      if (args?.orderBy?.updatedAt) {
-        results = results.sort((a, b) => {
-          const ta = new Date(String(a.updatedAt)).getTime()
-          const tb = new Date(String(b.updatedAt)).getTime()
-          return args.orderBy?.updatedAt === 'desc' ? tb - ta : ta - tb
-        })
+      if (typeof args?.skip === 'number' || typeof args?.take === 'number') {
+        const start = typeof args?.skip === 'number' ? args.skip : 0
+        const end = typeof args?.take === 'number' ? start + args.take : undefined
+        results = results.slice(start, end)
       }
 
       if (args?.select) {
@@ -269,6 +312,11 @@ export const prismaMock = {
     delete: vi.fn(async (args: { where: { id: number } }) => {
       mockSkills.delete(args.where.id)
       return { id: args.where.id }
+    }),
+
+    count: vi.fn(async (args?: { where?: Record<string, unknown> }) => {
+      const results = filterSkillsByWhere(Array.from(mockSkills.values()), args?.where)
+      return results.length
     }),
   },
 
@@ -409,6 +457,16 @@ export const prismaMock = {
     update: vi.fn(async (args: { where: { skillId_path: { skillId: number; path: string } }; data: Record<string, unknown> }) => {
       for (const [fid, file] of mockFiles) {
         if (file.skillId === args.where.skillId_path.skillId && file.path === args.where.skillId_path.path) {
+          if (typeof args.data.path === 'string' && args.data.path !== file.path) {
+            for (const [, existing] of mockFiles) {
+              if (
+                existing.skillId === file.skillId &&
+                existing.path === args.data.path
+              ) {
+                throw makePrismaError('P2002', 'Unique constraint failed on skillId_path')
+              }
+            }
+          }
           const updated = { ...file, ...args.data, updatedAt: new Date() }
           mockFiles.set(fid, updated)
           return updated

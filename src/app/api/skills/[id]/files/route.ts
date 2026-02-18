@@ -199,6 +199,65 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 }
 
 /**
+ * PATCH /api/skills/:id/files - 重命名/移动文件
+ */
+export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  const { id } = await params
+  const skillId = parseSkillId(id)
+  if (!skillId) return NextResponse.json({ error: 'Invalid skill id' }, { status: 400 })
+  const skill = await prisma.skill.findUnique({ where: { id: skillId } })
+  if (!skill) return NextResponse.json({ error: 'Skill not found' }, { status: 404 })
+
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  const { fromPath, toPath } = body as { fromPath?: string; toPath?: string }
+  if (!fromPath || typeof fromPath !== 'string') {
+    return NextResponse.json({ error: 'fromPath is required' }, { status: 400 })
+  }
+  if (!toPath || typeof toPath !== 'string') {
+    return NextResponse.json({ error: 'toPath is required' }, { status: 400 })
+  }
+  if (fromPath === toPath) {
+    return NextResponse.json({ error: 'toPath must be different from fromPath' }, { status: 400 })
+  }
+
+  const validation = validateSkillFilePath(toPath)
+  if (!validation.valid) {
+    return NextResponse.json({ error: validation.errors.join('; ') }, { status: 400 })
+  }
+
+  const existing = await prisma.skillFile.findUnique({
+    where: { skillId_path: { skillId: skill.id, path: fromPath } },
+  })
+  if (!existing) return NextResponse.json({ error: 'File not found' }, { status: 404 })
+
+  try {
+    const moved = await prisma.skillFile.update({
+      where: { skillId_path: { skillId: skill.id, path: fromPath } },
+      data: { path: toPath },
+    })
+
+    return NextResponse.json({
+      id: moved.id,
+      path: moved.path,
+      mime: moved.mime,
+      isBinary: moved.isBinary,
+      updatedAt: moved.updatedAt,
+    })
+  } catch (err) {
+    if (isPrismaCode(err, 'P2002')) {
+      return NextResponse.json({ error: 'File path already exists' }, { status: 409 })
+    }
+    throw err
+  }
+}
+
+/**
  * DELETE /api/skills/:id/files?path=... - 删除文件
  */
 export async function DELETE(request: NextRequest, { params }: RouteParams) {

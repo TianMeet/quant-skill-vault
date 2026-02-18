@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { AlertCircle, CheckCircle, Eye, File, Loader2, Wand2 } from 'lucide-react'
 import { FormField } from '@/components/ui/form-field'
 import { Button } from '@/components/ui/button'
@@ -9,13 +9,21 @@ import { toFriendlyLintIssues } from '@/lib/friendly-validation'
 
 export interface AiChangeSet {
   skillPatch: Record<string, unknown>
-  fileOps: Array<{ op: string; path: string; mime?: string; content_text?: string }>
+  fileOps: Array<{ op: string; path: string; mime?: string; content_text?: string; content_base64?: string }>
   notes?: string
 }
 
 export interface AiLintPreview {
   valid: boolean
   errors: Array<{ field: string; message: string }>
+}
+
+interface AiFileState {
+  loading: boolean
+  exists: boolean
+  isBinary: boolean
+  contentText: string | null
+  error: string
 }
 
 interface EnhanceTabProps {
@@ -32,9 +40,58 @@ interface EnhanceTabProps {
   aiApplied: boolean
   aiPreviewFile: string | null
   setAiPreviewFile: (path: string | null) => void
+  currentSkill: Record<string, unknown>
+  loadCurrentFile: (path: string) => Promise<{ exists: boolean; isBinary: boolean; contentText: string | null }>
   handleAiPropose: (action: string) => Promise<void>
   handleAiApply: () => Promise<void>
   clearAiChangeSet: () => void
+}
+
+const FIELD_LABEL: Record<string, string> = {
+  title: '标题',
+  summary: '摘要',
+  inputs: '输入',
+  outputs: '输出',
+  steps: '步骤',
+  risks: '风险',
+  triggers: '触发词',
+  guardrails: '安全护栏',
+  tests: '测试',
+  tags: '标签',
+}
+
+function stableStringify(value: unknown): string {
+  if (value === undefined) return 'undefined'
+  if (value === null) return 'null'
+  if (typeof value === 'string') return value
+  return JSON.stringify(value, null, 2)
+}
+
+function isEqualValue(left: unknown, right: unknown): boolean {
+  if (left === right) return true
+  return stableStringify(left) === stableStringify(right)
+}
+
+function countLinesDiff(beforeText: string, afterText: string): { added: number; removed: number } {
+  const beforeCounts = new Map<string, number>()
+  const afterCounts = new Map<string, number>()
+  for (const line of beforeText.split(/\r?\n/)) {
+    beforeCounts.set(line, (beforeCounts.get(line) || 0) + 1)
+  }
+  for (const line of afterText.split(/\r?\n/)) {
+    afterCounts.set(line, (afterCounts.get(line) || 0) + 1)
+  }
+
+  const keys = new Set([...beforeCounts.keys(), ...afterCounts.keys()])
+  let added = 0
+  let removed = 0
+  for (const key of keys) {
+    const before = beforeCounts.get(key) || 0
+    const after = afterCounts.get(key) || 0
+    if (after > before) added += after - before
+    if (before > after) removed += before - after
+  }
+  return { added, removed }
 }
 
 export function SkillFormEnhanceTab({
@@ -51,6 +108,8 @@ export function SkillFormEnhanceTab({
   aiApplied,
   aiPreviewFile,
   setAiPreviewFile,
+  currentSkill,
+  loadCurrentFile,
   handleAiPropose,
   handleAiApply,
   clearAiChangeSet,
@@ -59,6 +118,80 @@ export function SkillFormEnhanceTab({
     () => toFriendlyLintIssues(aiLintPreview?.errors ?? []),
     [aiLintPreview],
   )
+  const [previewFileState, setPreviewFileState] = useState<{ path: string; state: AiFileState } | null>(null)
+
+  const skillDiffEntries = useMemo(() => {
+    if (!aiChangeSet) return []
+    return Object.entries(aiChangeSet.skillPatch)
+      .filter(([key, after]) => !isEqualValue(currentSkill[key], after))
+      .map(([key, after]) => ({
+        key,
+        label: FIELD_LABEL[key] || key,
+        before: currentSkill[key],
+        after,
+      }))
+  }, [aiChangeSet, currentSkill])
+
+  const selectedFileOp = useMemo(() => {
+    if (!aiChangeSet || !aiPreviewFile) return null
+    return aiChangeSet.fileOps.find((fop) => fop.path === aiPreviewFile) || null
+  }, [aiChangeSet, aiPreviewFile])
+
+  const selectedFileState =
+    aiPreviewFile && previewFileState?.path === aiPreviewFile ? previewFileState.state : undefined
+  const beforeFileText =
+    selectedFileState && selectedFileState.exists && !selectedFileState.isBinary
+      ? selectedFileState.contentText || ''
+      : ''
+  const afterFileText =
+    selectedFileOp?.op === 'delete'
+      ? ''
+      : (selectedFileOp?.content_text || '')
+  const lineDiff = selectedFileOp ? countLinesDiff(beforeFileText, afterFileText) : { added: 0, removed: 0 }
+
+  async function handleToggleAiPreview(path: string) {
+    if (aiPreviewFile === path) {
+      setAiPreviewFile(null)
+      return
+    }
+
+    setAiPreviewFile(path)
+    setPreviewFileState({
+      path,
+      state: {
+        loading: true,
+        exists: false,
+        isBinary: false,
+        contentText: null,
+        error: '',
+      },
+    })
+
+    try {
+      const result = await loadCurrentFile(path)
+      setPreviewFileState({
+        path,
+        state: {
+          loading: false,
+          exists: result.exists,
+          isBinary: result.isBinary,
+          contentText: result.contentText,
+          error: '',
+        },
+      })
+    } catch {
+      setPreviewFileState({
+        path,
+        state: {
+          loading: false,
+          exists: false,
+          isBinary: false,
+          contentText: null,
+          error: '读取当前文件失败',
+        },
+      })
+    }
+  }
 
   if (!skillId) {
     return <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>请先保存 Skill 以使用增强功能。</p>
@@ -102,16 +235,27 @@ export function SkillFormEnhanceTab({
 
       {aiChangeSet && (
         <div className="space-y-4" data-testid="ai-preview">
-          {Object.keys(aiChangeSet.skillPatch).length > 0 && (
+          {skillDiffEntries.length > 0 && (
             <div className={`${roundedClass} border p-4`}>
               <h3 className="text-sm font-semibold mb-2">建议的 Skill 变更</h3>
               <div className="space-y-2">
-                {Object.entries(aiChangeSet.skillPatch).map(([key, value]) => (
-                  <div key={key} className="text-sm">
-                    <span className="font-mono text-xs rounded px-1" style={{ background: 'var(--muted)' }}>{key}</span>
-                    <pre className={`mt-1 ${roundedClass} p-2 text-xs overflow-auto max-h-32`} style={{ background: 'var(--muted)' }}>
-                      {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
-                    </pre>
+                {skillDiffEntries.map((entry) => (
+                  <div key={entry.key} className={`${roundedClass} border p-2`}>
+                    <span className="font-mono text-xs rounded px-1" style={{ background: 'var(--muted)' }}>{entry.label}</span>
+                    <div className="mt-2 grid gap-2 md:grid-cols-2">
+                      <div>
+                        <p className="mb-1 text-[11px] font-medium" style={{ color: 'var(--muted-foreground)' }}>当前</p>
+                        <pre className={`${roundedClass} p-2 text-xs overflow-auto max-h-40`} style={{ background: 'var(--muted)' }}>
+                          {stableStringify(entry.before)}
+                        </pre>
+                      </div>
+                      <div>
+                        <p className="mb-1 text-[11px] font-medium" style={{ color: 'var(--muted-foreground)' }}>建议</p>
+                        <pre className={`${roundedClass} p-2 text-xs overflow-auto max-h-40`} style={{ background: 'color-mix(in srgb, var(--accent) 9%, var(--muted))' }}>
+                          {stableStringify(entry.after)}
+                        </pre>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -128,7 +272,7 @@ export function SkillFormEnhanceTab({
                       {fop.op}
                     </span>
                     <Button
-                      onClick={() => setAiPreviewFile(aiPreviewFile === fop.path ? null : fop.path)}
+                      onClick={() => void handleToggleAiPreview(fop.path)}
                       type="button"
                       variant="ghost"
                       className="h-auto font-mono text-xs text-blue-600 hover:underline flex items-center gap-1 px-0 py-0"
@@ -142,9 +286,42 @@ export function SkillFormEnhanceTab({
               {aiPreviewFile && (
                 <div className="mt-3">
                   <p className="text-xs font-mono mb-1" style={{ color: 'var(--muted-foreground)' }}>{aiPreviewFile}</p>
-                  <pre className={`${roundedClass} p-3 text-xs overflow-auto max-h-64`} style={{ background: 'var(--muted)' }} data-testid="ai-file-preview">
-                    {aiChangeSet.fileOps.find((f) => f.path === aiPreviewFile)?.content_text || '（无内容）'}
-                  </pre>
+                  {selectedFileState?.loading ? (
+                    <div className={`${roundedClass} flex items-center gap-2 p-3 text-sm`} style={{ background: 'var(--muted)', color: 'var(--muted-foreground)' }}>
+                      <Loader2 className="h-4 w-4 animate-spin" /> 正在加载当前文件内容...
+                    </div>
+                  ) : selectedFileState?.error ? (
+                    <div className={`${roundedClass} p-3 text-sm`} style={{ background: 'var(--danger-light)', color: 'var(--danger)' }}>
+                      {selectedFileState.error}
+                    </div>
+                  ) : selectedFileOp ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                        <span>新增行：{lineDiff.added}</span>
+                        <span>删除行：{lineDiff.removed}</span>
+                      </div>
+                      {(selectedFileOp.content_base64 || selectedFileState?.isBinary) ? (
+                        <div className={`${roundedClass} p-3 text-xs`} style={{ background: 'var(--muted)' }}>
+                          此文件包含二进制内容，当前仅展示路径级变更。
+                        </div>
+                      ) : (
+                        <div className="grid gap-2 md:grid-cols-2">
+                          <div>
+                            <p className="mb-1 text-[11px] font-medium" style={{ color: 'var(--muted-foreground)' }}>当前内容</p>
+                            <pre className={`${roundedClass} p-3 text-xs overflow-auto max-h-64`} style={{ background: 'var(--muted)' }} data-testid="ai-file-preview-before">
+                              {beforeFileText || '（空文件）'}
+                            </pre>
+                          </div>
+                          <div>
+                            <p className="mb-1 text-[11px] font-medium" style={{ color: 'var(--muted-foreground)' }}>建议内容</p>
+                            <pre className={`${roundedClass} p-3 text-xs overflow-auto max-h-64`} style={{ background: 'color-mix(in srgb, var(--accent) 9%, var(--muted))' }} data-testid="ai-file-preview">
+                              {selectedFileOp.op === 'delete' ? '（将删除）' : (afterFileText || '（空文件）')}
+                            </pre>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>

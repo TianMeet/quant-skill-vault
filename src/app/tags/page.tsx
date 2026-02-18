@@ -5,7 +5,9 @@ import Link from 'next/link'
 import { Search, Tag, FolderTree, RefreshCw } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
+import { useNotify } from '@/components/ui/notify-provider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toUserFriendlyErrorMessage } from '@/lib/friendly-validation'
 
@@ -24,17 +26,17 @@ interface LinkedSkillItem {
 }
 
 export default function TagsPage() {
+  const notify = useNotify()
   const [tags, setTags] = useState<TagItem[]>([])
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
 
   const [editingTagId, setEditingTagId] = useState<number | null>(null)
   const [editingName, setEditingName] = useState('')
   const [mergingTagId, setMergingTagId] = useState<number | null>(null)
   const [mergeTargetId, setMergeTargetId] = useState<string>('')
   const [busyTagId, setBusyTagId] = useState<number | null>(null)
+  const [pendingDeleteTag, setPendingDeleteTag] = useState<TagItem | null>(null)
 
   const [expandedTagId, setExpandedTagId] = useState<number | null>(null)
   const [linkedSkillsByTag, setLinkedSkillsByTag] = useState<Record<number, LinkedSkillItem[]>>({})
@@ -42,13 +44,12 @@ export default function TagsPage() {
 
   const fetchTags = useCallback(async () => {
     setLoading(true)
-    setError('')
     try {
       const res = await fetch(`/api/tags?query=${encodeURIComponent(query)}`)
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         setTags([])
-        setError(toUserFriendlyErrorMessage(data.error || `加载标签失败（${res.status}）`))
+        notify.error(toUserFriendlyErrorMessage(data.error || `加载标签失败（${res.status}）`))
         return
       }
       const data = await res.json().catch(() => ({}))
@@ -56,11 +57,11 @@ export default function TagsPage() {
       setTags(items)
     } catch {
       setTags([])
-      setError('加载标签失败，请稍后重试。')
+      notify.error('加载标签失败，请稍后重试。')
     } finally {
       setLoading(false)
     }
-  }, [query])
+  }, [query, notify])
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -69,12 +70,6 @@ export default function TagsPage() {
     return () => clearTimeout(timer)
   }, [fetchTags])
 
-  useEffect(() => {
-    if (!success) return
-    const timer = setTimeout(() => setSuccess(''), 2200)
-    return () => clearTimeout(timer)
-  }, [success])
-
   const mergeOptions = useMemo(
     () => tags.filter((item) => item.id !== mergingTagId),
     [tags, mergingTagId]
@@ -82,19 +77,18 @@ export default function TagsPage() {
 
   async function loadLinkedSkills(tagId: number) {
     setLoadingSkillsTagId(tagId)
-    setError('')
     try {
       const res = await fetch(`/api/tags/${tagId}/skills`)
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setError(toUserFriendlyErrorMessage(data.error || `加载关联技能失败（${res.status}）`))
+        notify.error(toUserFriendlyErrorMessage(data.error || `加载关联技能失败（${res.status}）`))
         return
       }
       const data = await res.json().catch(() => ({}))
       const skills = Array.isArray(data.skills) ? data.skills : []
       setLinkedSkillsByTag((prev) => ({ ...prev, [tagId]: skills }))
     } catch {
-      setError('加载关联技能失败，请稍后重试。')
+      notify.error('加载关联技能失败，请稍后重试。')
     } finally {
       setLoadingSkillsTagId(null)
     }
@@ -102,7 +96,6 @@ export default function TagsPage() {
 
   async function handleRename(tagId: number) {
     setBusyTagId(tagId)
-    setError('')
     try {
       const res = await fetch(`/api/tags/${tagId}`, {
         method: 'PATCH',
@@ -111,48 +104,57 @@ export default function TagsPage() {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setError(toUserFriendlyErrorMessage(data.error || `重命名失败（${res.status}）`))
+        const msg = toUserFriendlyErrorMessage(data.error || `重命名失败（${res.status}）`)
+        notify.error(msg)
         return
       }
-      setSuccess('标签已更新')
+      notify.success('标签已更新')
       setEditingTagId(null)
       setEditingName('')
       await fetchTags()
     } catch {
-      setError('重命名失败，请稍后重试。')
+      const msg = '重命名失败，请稍后重试。'
+      notify.error(msg)
     } finally {
       setBusyTagId(null)
     }
   }
 
   async function handleDelete(tag: TagItem) {
-    if (!confirm(`确认删除标签 "${tag.name}" 吗？该操作会解除它与技能的关联。`)) return
+    setPendingDeleteTag(tag)
+  }
+
+  async function confirmDeleteTag() {
+    if (!pendingDeleteTag) return
+    const tag = pendingDeleteTag
     setBusyTagId(tag.id)
-    setError('')
     try {
       const res = await fetch(`/api/tags/${tag.id}`, { method: 'DELETE' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setError(toUserFriendlyErrorMessage(data.error || `删除失败（${res.status}）`))
+        const msg = toUserFriendlyErrorMessage(data.error || `删除失败（${res.status}）`)
+        notify.error(msg)
         return
       }
-      setSuccess(`标签 "${tag.name}" 已删除`)
+      notify.success(`标签 "${tag.name}" 已删除`)
       if (expandedTagId === tag.id) setExpandedTagId(null)
       await fetchTags()
     } catch {
-      setError('删除标签失败，请稍后重试。')
+      const msg = '删除标签失败，请稍后重试。'
+      notify.error(msg)
     } finally {
       setBusyTagId(null)
+      setPendingDeleteTag(null)
     }
   }
 
   async function handleMerge(sourceTagId: number) {
     if (!mergeTargetId) {
-      setError('请先选择合并目标标签。')
+      const msg = '请先选择合并目标标签。'
+      notify.error(msg)
       return
     }
     setBusyTagId(sourceTagId)
-    setError('')
     try {
       const res = await fetch('/api/tags/merge', {
         method: 'POST',
@@ -161,16 +163,18 @@ export default function TagsPage() {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setError(toUserFriendlyErrorMessage(data.error || `合并失败（${res.status}）`))
+        const msg = toUserFriendlyErrorMessage(data.error || `合并失败（${res.status}）`)
+        notify.error(msg)
         return
       }
-      setSuccess('标签已完成合并')
+      notify.success('标签已完成合并')
       setMergingTagId(null)
       setMergeTargetId('')
       if (expandedTagId === sourceTagId) setExpandedTagId(null)
       await fetchTags()
     } catch {
-      setError('合并标签失败，请稍后重试。')
+      const msg = '合并标签失败，请稍后重试。'
+      notify.error(msg)
     } finally {
       setBusyTagId(null)
     }
@@ -178,6 +182,23 @@ export default function TagsPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
+      <ConfirmDialog
+        open={!!pendingDeleteTag}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteTag(null)
+        }}
+        title="确认删除标签"
+        description={
+          pendingDeleteTag
+            ? `将删除标签 "${pendingDeleteTag.name}"，并解除它与技能的关联。`
+            : undefined
+        }
+        confirmText="删除标签"
+        confirmVariant="destructive"
+        loading={busyTagId === pendingDeleteTag?.id}
+        onConfirm={() => void confirmDeleteTag()}
+      />
+
       <div className="mb-6 flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">标签管理</h1>
@@ -200,32 +221,6 @@ export default function TagsPage() {
           className="w-full rounded-lg py-2.5 pl-10 pr-4 text-sm"
         />
       </div>
-
-      {error && (
-        <div
-          className="mb-3 rounded-lg border px-3 py-2 text-sm"
-          style={{
-            borderColor: 'color-mix(in srgb, var(--danger) 40%, var(--border))',
-            background: 'var(--danger-light)',
-            color: 'var(--danger)',
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      {success && (
-        <div
-          className="mb-3 rounded-lg border px-3 py-2 text-sm"
-          style={{
-            borderColor: 'color-mix(in srgb, var(--success) 45%, var(--border))',
-            background: 'var(--success-light)',
-            color: 'var(--success)',
-          }}
-        >
-          {success}
-        </div>
-      )}
 
       <div className="card overflow-hidden">
         {loading ? (

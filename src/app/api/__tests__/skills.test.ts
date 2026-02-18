@@ -5,6 +5,8 @@ import { prismaMock, resetMockDb } from './prisma-mock'
 // Import route handlers
 import { GET as getSkills, POST as createSkill } from '@/app/api/skills/route'
 import { GET as getSkill, PUT as updateSkill, DELETE as deleteSkill } from '@/app/api/skills/[id]/route'
+import { POST as duplicateSkill } from '@/app/api/skills/[id]/duplicate/route'
+import { POST as batchSkills } from '@/app/api/skills/batch/route'
 import { GET as getTags } from '@/app/api/tags/route'
 
 function makeRequest(url: string, options?: RequestInit) {
@@ -130,6 +132,35 @@ describe('Skills API', () => {
       const res = await getSkills(req)
       expect(res.status).toBe(200)
     })
+
+    it('should support paginated response with sorting', async () => {
+      await createSkill(
+        makeRequest('http://localhost:3000/api/skills', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...validSkillBody, title: 'Z Skill' }),
+        })
+      )
+      await createSkill(
+        makeRequest('http://localhost:3000/api/skills', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...validSkillBody, title: 'A Skill' }),
+        })
+      )
+
+      const req = makeRequest('http://localhost:3000/api/skills?page=1&limit=1&sort=title_asc')
+      const res = await getSkills(req)
+      expect(res.status).toBe(200)
+
+      const data = await res.json()
+      expect(Array.isArray(data.items)).toBe(true)
+      expect(data.items.length).toBe(1)
+      expect(data.items[0].title).toBe('A Skill')
+      expect(data.total).toBe(2)
+      expect(data.totalPages).toBe(2)
+      expect(data.sort).toBe('title_asc')
+    })
   })
 
   describe('GET /api/skills/:id', () => {
@@ -244,6 +275,31 @@ describe('Skills API', () => {
     })
   })
 
+  describe('POST /api/skills/:id/duplicate', () => {
+    it('should duplicate skill with a unique slug', async () => {
+      const createReq = makeRequest('http://localhost:3000/api/skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(validSkillBody),
+      })
+      const createdRes = await createSkill(createReq)
+      const created = await createdRes.json()
+
+      const duplicateReq = makeRequest(`http://localhost:3000/api/skills/${created.id}/duplicate`, {
+        method: 'POST',
+      })
+      const res = await duplicateSkill(duplicateReq, { params: Promise.resolve({ id: String(created.id) }) })
+      expect(res.status).toBe(201)
+      const duplicated = await res.json()
+
+      expect(duplicated.id).not.toBe(created.id)
+      expect(duplicated.title).toContain('副本')
+      expect(duplicated.slug).not.toBe(created.slug)
+      expect(duplicated.tags).toContain('nlp')
+      expect(duplicated.tags).toContain('testing')
+    })
+  })
+
   describe('GET /api/tags', () => {
     it('should return tags list', async () => {
       const req = makeRequest('http://localhost:3000/api/tags')
@@ -252,6 +308,85 @@ describe('Skills API', () => {
       const data = await res.json()
       expect(Array.isArray(data.items)).toBe(true)
       expect(typeof data.total).toBe('number')
+    })
+  })
+
+  describe('POST /api/skills/batch', () => {
+    it('should bulk add tags to selected skills', async () => {
+      const createReq1 = makeRequest('http://localhost:3000/api/skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...validSkillBody, title: 'Batch Skill A', tags: ['alpha'] }),
+      })
+      const createReq2 = makeRequest('http://localhost:3000/api/skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...validSkillBody, title: 'Batch Skill B', tags: ['beta'] }),
+      })
+      const res1 = await createSkill(createReq1)
+      const res2 = await createSkill(createReq2)
+      const skill1 = await res1.json()
+      const skill2 = await res2.json()
+
+      const batchReq = makeRequest('http://localhost:3000/api/skills/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'bulk-add-tags',
+          skillIds: [skill1.id, skill2.id],
+          tags: ['shared'],
+        }),
+      })
+
+      const batchRes = await batchSkills(batchReq)
+      expect(batchRes.status).toBe(200)
+
+      const get1 = await getSkill(makeRequest(`http://localhost:3000/api/skills/${skill1.id}`), {
+        params: Promise.resolve({ id: String(skill1.id) }),
+      })
+      const get2 = await getSkill(makeRequest(`http://localhost:3000/api/skills/${skill2.id}`), {
+        params: Promise.resolve({ id: String(skill2.id) }),
+      })
+      const data1 = await get1.json()
+      const data2 = await get2.json()
+      expect(data1.tags).toContain('shared')
+      expect(data2.tags).toContain('shared')
+    })
+
+    it('should bulk delete selected skills', async () => {
+      const res1 = await createSkill(
+        makeRequest('http://localhost:3000/api/skills', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...validSkillBody, title: 'Delete A' }),
+        })
+      )
+      const res2 = await createSkill(
+        makeRequest('http://localhost:3000/api/skills', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...validSkillBody, title: 'Delete B' }),
+        })
+      )
+      const skill1 = await res1.json()
+      const skill2 = await res2.json()
+
+      const batchReq = makeRequest('http://localhost:3000/api/skills/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'bulk-delete',
+          skillIds: [skill1.id, skill2.id],
+        }),
+      })
+      const batchRes = await batchSkills(batchReq)
+      expect(batchRes.status).toBe(200)
+      const batchData = await batchRes.json()
+      expect(batchData.affected).toBe(2)
+
+      const listRes = await getSkills(makeRequest('http://localhost:3000/api/skills'))
+      const listData = await listRes.json()
+      expect(listData.length).toBe(0)
     })
   })
 })

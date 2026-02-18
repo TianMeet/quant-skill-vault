@@ -4,6 +4,7 @@ import { Nav } from "@/components/nav";
 import { ChatProvider } from "@/lib/chat/chat-context";
 import { ChatPanel } from "@/components/chat-panel";
 import { ThemeProvider } from "@/lib/theme-context";
+import { NotifyProvider } from "@/components/ui/notify-provider";
 
 export const metadata: Metadata = {
   title: "Skill 管理平台",
@@ -22,11 +23,13 @@ export default function RootLayout({
         style={{ background: 'var(--background)', color: 'var(--foreground)' }}
       >
         <ThemeProvider>
-          <ChatProvider>
-            <Nav />
-            <main className="pt-14">{children}</main>
-            <ChatPanel />
-          </ChatProvider>
+          <NotifyProvider>
+            <ChatProvider>
+              <Nav />
+              <main className="pt-14">{children}</main>
+              <ChatPanel />
+            </ChatProvider>
+          </NotifyProvider>
         </ThemeProvider>
       </body>
     </html>

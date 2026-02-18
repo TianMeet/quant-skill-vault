@@ -3,10 +3,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Download, Edit, Trash2, AlertCircle, CheckCircle, File, ChevronLeft, Shield, Zap, FlaskConical } from 'lucide-react'
+import { Download, Edit, Trash2, CheckCircle, File, ChevronLeft, Shield, Zap, FlaskConical, Copy, AlertCircle } from 'lucide-react'
 import type { SkillGuardrails, SkillTestCase } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { useNotify } from '@/components/ui/notify-provider'
 import { toFriendlyLintIssues, toUserFriendlyErrorMessage } from '@/lib/friendly-validation'
 
 interface SkillDetail {
@@ -42,37 +44,39 @@ interface LintError {
 export default function SkillDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const notify = useNotify()
   const skillId = Array.isArray(params.id) ? params.id[0] : params.id
   const [skill, setSkill] = useState<SkillDetail | null>(null)
   const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState('')
-  const [actionError, setActionError] = useState('')
   const [lintErrors, setLintErrors] = useState<LintError[]>([])
   const [lintPassed, setLintPassed] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
   const [files, setFiles] = useState<SkillFileItem[]>([])
   const friendlyLintIssues = useMemo(() => toFriendlyLintIssues(lintErrors), [lintErrors])
 
   const fetchSkill = useCallback(async () => {
     if (!skillId) return
     setLoading(true)
-    setLoadError('')
     try {
       const res = await fetch(`/api/skills/${skillId}`)
       if (res.ok) {
         setSkill(await res.json())
       } else {
         const data = await res.json().catch(() => ({}))
+        const msg = toUserFriendlyErrorMessage(data.error || `加载失败（${res.status}）`)
         setSkill(null)
-        setLoadError(toUserFriendlyErrorMessage(data.error || `加载失败（${res.status}）`))
+        notify.error(msg)
       }
     } catch {
+      const msg = '加载 Skill 失败，请稍后重试。'
       setSkill(null)
-      setLoadError('加载 Skill 失败，请稍后重试。')
+      notify.error(msg)
     } finally {
       setLoading(false)
     }
-  }, [skillId])
+  }, [skillId, notify])
 
   const fetchFiles = useCallback(async () => {
     if (!skillId) return
@@ -90,22 +94,50 @@ export default function SkillDetailPage() {
   }, [fetchSkill, fetchFiles])
 
   async function handleDelete() {
+    setDeleteDialogOpen(true)
+  }
+
+  async function confirmDelete() {
     if (!skillId) return
-    if (!confirm('确定删除该 Skill？')) return
-    setActionError('')
     setDeleting(true)
     try {
       const res = await fetch(`/api/skills/${skillId}`, { method: 'DELETE' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setActionError(toUserFriendlyErrorMessage(data.error || `删除失败（${res.status}）`))
+        const msg = toUserFriendlyErrorMessage(data.error || `删除失败（${res.status}）`)
+        notify.error(msg)
         return
       }
+      notify.success('Skill 已删除')
       router.push('/skills')
     } catch {
-      setActionError('删除时网络异常，请重试。')
+      const msg = '删除时网络异常，请重试。'
+      notify.error(msg)
     } finally {
       setDeleting(false)
+      setDeleteDialogOpen(false)
+    }
+  }
+
+  async function handleDuplicate() {
+    if (!skillId) return
+    setDuplicating(true)
+    try {
+      const res = await fetch(`/api/skills/${skillId}/duplicate`, { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        const msg = toUserFriendlyErrorMessage(data.error || `复制失败（${res.status}）`)
+        notify.error(msg)
+        return
+      }
+      const data = await res.json()
+      notify.success('Skill 副本已创建')
+      router.push(`/skills/${data.id}/edit`)
+    } catch {
+      const msg = '复制 Skill 失败，请稍后重试。'
+      notify.error(msg)
+    } finally {
+      setDuplicating(false)
     }
   }
 
@@ -121,11 +153,14 @@ export default function SkillDetailPage() {
       const data = await res.json().catch(() => ({}))
       if (data.valid) {
         setLintPassed(true)
+        notify.success('校验通过')
       } else {
         setLintErrors(Array.isArray(data.errors) ? data.errors : [{ field: 'body', message: 'Invalid request body' }])
+        notify.error('校验未通过，请根据提示修复后重试。')
       }
     } catch {
       setLintErrors([{ field: 'body', message: 'Invalid request body' }])
+      notify.error('运行校验失败，请稍后重试。')
     }
   }
 
@@ -150,13 +185,24 @@ export default function SkillDetailPage() {
   if (!skill) {
     return (
       <div className="mx-auto max-w-4xl px-6 py-8">
-        <p className="text-sm" style={{ color: 'var(--danger)' }}>{loadError || 'Skill 未找到'}</p>
+        <p className="text-sm" style={{ color: 'var(--danger)' }}>Skill 未找到或加载失败</p>
       </div>
     )
   }
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 animate-in">
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        title="确认删除 Skill"
+        description="删除后将无法恢复，相关支持文件也会一并移除。"
+        confirmText="删除 Skill"
+        confirmVariant="destructive"
+        loading={deleting}
+        onConfirm={() => void confirmDelete()}
+      />
+
       {/* Breadcrumb */}
       <Link
         href="/skills"
@@ -193,6 +239,14 @@ export default function SkillDetailPage() {
             </Link>
           </Button>
           <Button
+            onClick={handleDuplicate}
+            disabled={duplicating}
+            variant="outline"
+            className="rounded-lg"
+          >
+            <Copy className="h-3.5 w-3.5" /> {duplicating ? '复制中...' : '复制'}
+          </Button>
+          <Button
             onClick={handleDelete}
             disabled={deleting}
             variant="destructive"
@@ -202,22 +256,6 @@ export default function SkillDetailPage() {
           </Button>
         </div>
       </div>
-
-      {actionError && (
-        <div
-          className="mb-4 rounded-lg border px-3 py-2 text-sm"
-          style={{
-            borderColor: 'color-mix(in srgb, var(--danger) 40%, var(--border))',
-            background: 'var(--danger-light)',
-            color: 'var(--danger)',
-          }}
-        >
-          <p className="flex items-center gap-1.5">
-            <AlertCircle className="h-4 w-4" />
-            {actionError}
-          </p>
-        </div>
-      )}
 
       {/* Content Sections */}
       <div className="space-y-4">
