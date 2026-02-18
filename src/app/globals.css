@@ -90,6 +90,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+html {
+  scrollbar-gutter: stable;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

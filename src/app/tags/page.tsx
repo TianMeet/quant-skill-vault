@@ -1,14 +1,23 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Search, Tag, FolderTree, RefreshCw } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination'
 import { useNotify } from '@/components/ui/notify-provider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { TagPill } from '@/components/tag-pill'
 import { toUserFriendlyErrorMessage } from '@/lib/friendly-validation'
 
 interface TagItem {
@@ -25,11 +34,39 @@ interface LinkedSkillItem {
   updatedAt: string
 }
 
+const PAGINATION_ELLIPSIS = 'ellipsis'
+const SEARCH_DEBOUNCE_MS = 400
+const SEARCH_THROTTLE_MS = 900
+
+function getVisiblePages(currentPage: number, totalPages: number): Array<number | typeof PAGINATION_ELLIPSIS> {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1)
+  }
+
+  if (currentPage <= 4) {
+    return [1, 2, 3, 4, 5, PAGINATION_ELLIPSIS, totalPages]
+  }
+
+  if (currentPage >= totalPages - 3) {
+    return [1, PAGINATION_ELLIPSIS, totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages]
+  }
+
+  return [1, PAGINATION_ELLIPSIS, currentPage - 1, currentPage, currentPage + 1, PAGINATION_ELLIPSIS, totalPages]
+}
+
 export default function TagsPage() {
   const notify = useNotify()
   const [tags, setTags] = useState<TagItem[]>([])
+  const [queryInput, setQueryInput] = useState('')
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(20)
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
   const [loading, setLoading] = useState(true)
+  const [hasFetchedOnce, setHasFetchedOnce] = useState(false)
+  const lastQueryCommitAtRef = useRef(0)
+  const hasFetchedOnceRef = useRef(false)
 
   const [editingTagId, setEditingTagId] = useState<number | null>(null)
   const [editingName, setEditingName] = useState('')
@@ -42,38 +79,79 @@ export default function TagsPage() {
   const [linkedSkillsByTag, setLinkedSkillsByTag] = useState<Record<number, LinkedSkillItem[]>>({})
   const [loadingSkillsTagId, setLoadingSkillsTagId] = useState<number | null>(null)
 
-  const fetchTags = useCallback(async () => {
+  const fetchTags = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/tags?query=${encodeURIComponent(query)}`)
+      const params = new URLSearchParams()
+      params.set('query', query)
+      params.set('page', String(page))
+      params.set('limit', String(limit))
+      const res = await fetch(`/api/tags?${params}`, { signal })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setTags([])
+        if (!hasFetchedOnceRef.current) {
+          setTags([])
+          setTotal(0)
+          setTotalPages(1)
+        }
         notify.error(toUserFriendlyErrorMessage(data.error || `加载标签失败（${res.status}）`))
         return
       }
       const data = await res.json().catch(() => ({}))
       const items = Array.isArray(data) ? data : Array.isArray(data.items) ? data.items : []
       setTags(items)
-    } catch {
-      setTags([])
+      setTotal(typeof data.total === 'number' ? data.total : items.length)
+      setTotalPages(typeof data.totalPages === 'number' ? data.totalPages : 1)
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
+      if (!hasFetchedOnceRef.current) {
+        setTags([])
+        setTotal(0)
+        setTotalPages(1)
+      }
       notify.error('加载标签失败，请稍后重试。')
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) {
+        setLoading(false)
+        if (!hasFetchedOnceRef.current) {
+          hasFetchedOnceRef.current = true
+          setHasFetchedOnce(true)
+        }
+      }
     }
-  }, [query, notify])
+  }, [query, page, limit, notify])
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      void fetchTags()
-    }, 220)
-    return () => clearTimeout(timer)
+    const controller = new AbortController()
+    void fetchTags(controller.signal)
+    return () => controller.abort()
   }, [fetchTags])
+
+  useEffect(() => {
+    if (queryInput === query) return
+    const elapsed = Date.now() - lastQueryCommitAtRef.current
+    const throttleDelay = Math.max(0, SEARCH_THROTTLE_MS - elapsed)
+    const delay = Math.max(SEARCH_DEBOUNCE_MS, throttleDelay)
+    const timer = window.setTimeout(() => {
+      lastQueryCommitAtRef.current = Date.now()
+      setQuery(queryInput)
+      setPage(1)
+    }, delay)
+    return () => window.clearTimeout(timer)
+  }, [queryInput, query])
+
+  useEffect(() => {
+    setPage((prev) => {
+      const maxPage = Math.max(1, totalPages)
+      return prev > maxPage ? maxPage : prev
+    })
+  }, [totalPages])
 
   const mergeOptions = useMemo(
     () => tags.filter((item) => item.id !== mergingTagId),
     [tags, mergingTagId]
   )
+  const visiblePages = useMemo(() => getVisiblePages(page, Math.max(1, totalPages)), [page, totalPages])
 
   async function loadLinkedSkills(tagId: number) {
     setLoadingSkillsTagId(tagId)
@@ -215,15 +293,44 @@ export default function TagsPage() {
       <div className="mb-4 relative">
         <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'var(--muted-foreground)' }} />
         <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={queryInput}
+          onChange={(e) => {
+            setQueryInput(e.target.value)
+          }}
           placeholder="搜索标签..."
           className="w-full rounded-lg py-2.5 pl-10 pr-4 text-sm"
         />
       </div>
 
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1">
+          <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>每页</span>
+          <Select
+            value={String(limit)}
+            onValueChange={(value) => {
+              setLimit(Number(value))
+              setPage(1)
+            }}
+          >
+            <SelectTrigger
+              className="h-8 w-[78px] rounded-md border-[var(--border)] bg-[var(--card)] px-2 text-xs"
+            >
+              <SelectValue placeholder="每页" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="10">10</SelectItem>
+              <SelectItem value="20">20</SelectItem>
+              <SelectItem value="50">50</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
+          共 {total} 个标签
+        </span>
+      </div>
+
       <div className="card overflow-hidden">
-        {loading ? (
+        {!hasFetchedOnce && loading ? (
           <div className="p-4 space-y-2">
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="skeleton h-11 w-full" />
@@ -236,14 +343,17 @@ export default function TagsPage() {
           </div>
         ) : (
           <div>
+            {loading && (
+              <div className="border-b px-4 py-2 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--muted-foreground)' }}>
+                正在更新标签列表...
+              </div>
+            )}
             {tags.map((tag) => (
               <div key={tag.id} className="border-b px-4 py-3 last:border-b-0" style={{ borderColor: 'var(--border)' }}>
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="secondary" className="rounded-md px-2.5 py-0.5 text-xs">
-                        {tag.name}
-                      </Badge>
+                      <TagPill label={tag.name} />
                       <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
                         {tag.count} 个技能
                       </span>
@@ -404,6 +514,71 @@ export default function TagsPage() {
           </div>
         )}
       </div>
+
+      {tags.length > 0 && (
+        <div className="mt-4">
+          <div
+            className="flex flex-col items-start justify-between gap-2 rounded-lg border px-3 py-2 sm:flex-row sm:items-center"
+            style={{ borderColor: 'var(--border)', background: 'var(--card)' }}
+          >
+            <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
+              第 {page}/{Math.max(1, totalPages)} 页
+            </span>
+
+            <Pagination className="mx-0 w-auto">
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      if (loading || page <= 1) return
+                      setPage((prev) => Math.max(1, prev - 1))
+                    }}
+                    className={loading || page <= 1 ? 'pointer-events-none opacity-50' : undefined}
+                  />
+                </PaginationItem>
+
+                {visiblePages.map((item, idx) => (
+                  <PaginationItem key={`${item}-${idx}`}>
+                    {item === PAGINATION_ELLIPSIS ? (
+                      <PaginationEllipsis />
+                    ) : (
+                      <PaginationLink
+                        href="#"
+                        isActive={item === page}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          if (loading || item === page) return
+                          setPage(item)
+                        }}
+                        className={loading ? 'pointer-events-none opacity-50' : undefined}
+                      >
+                        {item}
+                      </PaginationLink>
+                    )}
+                  </PaginationItem>
+                ))}
+
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      const max = Math.max(1, totalPages)
+                      if (loading || page >= max) return
+                      setPage((prev) => Math.min(max, prev + 1))
+                    }}
+                    className={
+                      loading || page >= Math.max(1, totalPages) ? 'pointer-events-none opacity-50' : undefined
+                    }
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -41,10 +41,10 @@ describe('buildDescription', () => {
     expect(desc).toContain('"parse logs"')
   })
 
-  it('should be <= 1024 characters', () => {
+  it('should be <= 2048 characters', () => {
     const skill = makeValidSkill()
     const desc = buildDescription(skill)
-    expect(desc.length).toBeLessThanOrEqual(1024)
+    expect(desc.length).toBeLessThanOrEqual(2048)
   })
 })
 

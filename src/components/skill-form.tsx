@@ -43,6 +43,8 @@ const LEGACY_NEW_DRAFT_STORAGE_KEY = 'qsv:new-skill-draft:v1'
 const DRAFT_STORAGE_PREFIX = 'qsv:skill-draft:v2'
 const DRAFT_CLIENT_ID_KEY = 'qsv:draft-client-id'
 const AUTOSAVE_DEBOUNCE_MS = 450
+const TAG_SEARCH_DEBOUNCE_MS = 300
+const TAG_SEARCH_THROTTLE_MS = 700
 
 function randomDraftClientId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -54,6 +56,10 @@ function randomDraftClientId() {
 function normalizeDraftPayload(raw: unknown): DraftPayload | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   return raw as DraftPayload
+}
+
+function canRenderBinaryInWeb(mime: string): boolean {
+  return String(mime || '').toLowerCase().startsWith('image/')
 }
 
 export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFormProps) {
@@ -94,6 +100,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   const [files, setFiles] = useState<SkillFileItem[]>([])
   const [selectedFile, setSelectedFile] = useState<SkillFileItem | null>(null)
   const [fileContent, setFileContent] = useState('')
+  const [fileContentBase64, setFileContentBase64] = useState('')
   const [newFileDir, setNewFileDir] = useState('references')
   const [newFileName, setNewFileName] = useState('')
   const [fileSaving, setFileSaving] = useState(false)
@@ -101,7 +108,9 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   const [fileDeleting, setFileDeleting] = useState(false)
   const [pendingDeleteFilePath, setPendingDeleteFilePath] = useState<string | null>(null)
   const [tagInput, setTagInput] = useState('')
-  const [availableTags, setAvailableTags] = useState<string[]>([])
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([])
+  const [tagSuggestionsLoading, setTagSuggestionsLoading] = useState(false)
+  const [tagExactExists, setTagExactExists] = useState(false)
   const [showValidation, setShowValidation] = useState(false)
   const [draftHydrated, setDraftHydrated] = useState(false)
   const [draftRestoredAt, setDraftRestoredAt] = useState<number | null>(null)
@@ -113,6 +122,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   const draftSaveInFlightRef = useRef(false)
   const draftSaveQueuedRef = useRef(false)
   const serverDraftWarnedRef = useRef(false)
+  const lastTagSearchAtRef = useRef(0)
 
   // AI tab state (保持本地)
   const [aiInstruction, setAiInstruction] = useState('')
@@ -422,28 +432,72 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     }
   }, [draftHydrated, persistLocalDraft, persistServerDraft])
 
-  const loadTags = useCallback(async () => {
-    try {
-      const res = await fetch('/api/tags')
-      if (!res.ok) return
-      const data = await res.json().catch(() => ({}))
-      const items = Array.isArray(data) ? data : Array.isArray(data.items) ? data.items : []
-      const names = normalizeTagNames(
-        items
-          .map((item: unknown) =>
-            typeof item === 'object' && item && 'name' in item ? String((item as { name: unknown }).name) : ''
-          )
-          .filter(Boolean)
-      )
-      setAvailableTags(names)
-    } catch {
-      setAvailableTags([])
-    }
-  }, [])
+  const normalizedTagInput = normalizeTagName(tagInput)
 
   useEffect(() => {
-    void loadTags()
-  }, [loadTags])
+    if (!normalizedTagInput || normalizedTagInput.length < 2) {
+      setTagSuggestions([])
+      setTagExactExists(false)
+      setTagSuggestionsLoading(false)
+      return
+    }
+
+    let active = true
+    let controller: AbortController | null = null
+    const elapsed = Date.now() - lastTagSearchAtRef.current
+    const throttleDelay = Math.max(0, TAG_SEARCH_THROTTLE_MS - elapsed)
+    const delay = Math.max(TAG_SEARCH_DEBOUNCE_MS, throttleDelay)
+
+    const timer = window.setTimeout(async () => {
+      controller = new AbortController()
+      lastTagSearchAtRef.current = Date.now()
+      setTagSuggestionsLoading(true)
+      try {
+        const params = new URLSearchParams()
+        params.set('query', normalizedTagInput)
+        params.set('page', '1')
+        params.set('limit', '50')
+        const res = await fetch(`/api/tags?${params}`, { signal: controller.signal })
+        if (!res.ok) {
+          if (!active) return
+          setTagSuggestions([])
+          setTagExactExists(false)
+          return
+        }
+
+        const data = await res.json().catch(() => ({}))
+        const items = Array.isArray(data) ? data : Array.isArray(data.items) ? data.items : []
+        const names = normalizeTagNames(
+          items
+            .map((item: unknown) =>
+              typeof item === 'object' && item && 'name' in item
+                ? String((item as { name: unknown }).name)
+                : ''
+            )
+            .filter(Boolean)
+        )
+        const exactExists = names.includes(normalizedTagInput)
+        const nextSuggestions = names.filter((name) => !tags.includes(name)).slice(0, 8)
+
+        if (!active) return
+        setTagExactExists(exactExists)
+        setTagSuggestions(nextSuggestions)
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return
+        if (!active) return
+        setTagSuggestions([])
+        setTagExactExists(false)
+      } finally {
+        if (active) setTagSuggestionsLoading(false)
+      }
+    }, delay)
+
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+      controller?.abort()
+    }
+  }, [normalizedTagInput, tags])
 
   async function handleCreateFile() {
     if (!skillId || !newFileName.trim()) return
@@ -477,13 +531,28 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   async function handleSelectFile(f: SkillFileItem) {
     if (!skillId) return
     setSelectedFile(f)
-    if (!f.isBinary) {
-      const res = await fetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(f.path)}`)
-      if (res.ok) {
-        const data = await res.json()
-        setFileContent(data.contentText || '')
-      }
+    setFileContent('')
+    setFileContentBase64('')
+
+    if (f.isBinary && !canRenderBinaryInWeb(f.mime)) {
+      return
     }
+
+    const res = await fetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(f.path)}`)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      const msg = toUserFriendlyErrorMessage(data.error || `加载文件失败（${res.status}）`)
+      setUIField('error', msg)
+      notify.error(msg)
+      return
+    }
+
+    const data = await res.json().catch(() => ({}))
+    if (f.isBinary) {
+      setFileContentBase64(typeof data.contentBase64 === 'string' ? data.contentBase64 : '')
+      return
+    }
+    setFileContent(typeof data.contentText === 'string' ? data.contentText : '')
   }
 
   async function handleSaveFile() {
@@ -542,6 +611,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       setPendingDeleteFilePath(null)
     }
     if (selectedFile?.path === path) { setSelectedFile(null); setFileContent('') }
+    if (selectedFile?.path === path) { setFileContentBase64('') }
     await loadFiles()
     notify.success('文件已删除')
   }
@@ -739,7 +809,6 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     if (!nextTag) return
     markUserEdited('tags')
     addTag(nextTag)
-    setAvailableTags((prev) => (prev.includes(nextTag) ? prev : [...prev, nextTag].sort((a, b) => a.localeCompare(b))))
     setTagInput('')
   }
 
@@ -749,20 +818,10 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     setTagInput('')
   }
 
-  const normalizedTagInput = normalizeTagName(tagInput)
-  const tagSuggestions = useMemo(
-    () =>
-      normalizedTagInput
-        ? availableTags
-            .filter((name) => name.includes(normalizedTagInput) && !tags.includes(name))
-            .slice(0, 8)
-        : [],
-    [availableTags, normalizedTagInput, tags]
-  )
   const canCreateTag =
     !!normalizedTagInput &&
     !tags.includes(normalizedTagInput) &&
-    !availableTags.includes(normalizedTagInput)
+    !tagExactExists
 
   const draftTip = draftRestoredAt
     ? `已恢复${draftSource === 'server' ? '云端' : '本地'}草稿（${new Date(draftRestoredAt).toLocaleTimeString()}）`
@@ -1020,6 +1079,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
           tags={tags}
           tagInput={tagInput}
           tagSuggestions={tagSuggestions}
+          tagSuggestionsLoading={tagSuggestionsLoading}
           canCreateTag={canCreateTag}
           createTagPreview={normalizedTagInput}
           inputs={inputs}
@@ -1113,6 +1173,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
             files={files}
             selectedFile={selectedFile}
             fileContent={fileContent}
+            fileContentBase64={fileContentBase64}
             newFileDir={newFileDir}
             setNewFileDir={setNewFileDir}
             newFileName={newFileName}

@@ -3,7 +3,7 @@ const path = require('path')
 const yaml = require('js-yaml')
 
 const SKILL_NAME_REGEX = /^[a-z0-9-]{1,64}$/
-const MAX_DESCRIPTION_LENGTH = 1024
+const MAX_DESCRIPTION_LENGTH = 2048
 const REQUIRED_SECTIONS = ['## Purpose', '## Inputs', '## Outputs', '## Workflow', '## Guardrails', '## Tests']
 
 function ensureSkillDir(inputPath) {

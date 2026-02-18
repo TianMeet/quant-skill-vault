@@ -29,7 +29,9 @@
     "format": "prettier --write .",
     "skill:init": "node scripts/init-local-skill.js",
     "skill:validate": "node scripts/quick-validate-skill.js",
-    "skill:package": "node scripts/package-local-skill.js"
+    "skill:package": "node scripts/package-local-skill.js",
+    "skill:sync:anthropic": "node scripts/sync-anthropic-official-skills.js",
+    "skill:sync:anthropic:dry": "node scripts/sync-anthropic-official-skills.js --dry-run"
   },
   "prisma": {
     "seed": "npx tsx prisma/seed.ts"

@@ -34,6 +34,14 @@ type MergeTagResult = {
   movedSkills: number
 }
 
+type TagListPage = {
+  items: TagWithCount[]
+  total: number
+  page: number
+  limit: number
+  totalPages: number
+}
+
 function makeError(code: string, message: string, extra?: Record<string, unknown>) {
   return Object.assign(new Error(message), { code, ...extra })
 }
@@ -48,15 +56,33 @@ export function isServiceError(err: unknown, code: string): boolean {
   return !!err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === code
 }
 
-export async function listTags(queryRaw = ''): Promise<TagWithCount[]> {
+function buildTagWhere(queryRaw = '') {
   const query = normalizeTagName(queryRaw || '')
-  const where = query
+  return query
     ? {
         name: {
           contains: query,
         },
       }
     : undefined
+}
+
+function mapTagWithCount(tag: {
+  id: number
+  name: string
+  updatedAt: Date
+  _count: { skills: number }
+}): TagWithCount {
+  return {
+    id: tag.id,
+    name: tag.name,
+    count: tag._count.skills,
+    updatedAt: tag.updatedAt.toISOString(),
+  }
+}
+
+export async function listTags(queryRaw = ''): Promise<TagWithCount[]> {
+  const where = buildTagWhere(queryRaw)
 
   const tags = await prisma.tag.findMany({
     where,
@@ -66,12 +92,34 @@ export async function listTags(queryRaw = ''): Promise<TagWithCount[]> {
     },
   })
 
-  return tags.map((tag) => ({
-    id: tag.id,
-    name: tag.name,
-    count: tag._count.skills,
-    updatedAt: tag.updatedAt.toISOString(),
-  }))
+  return tags.map(mapTagWithCount)
+}
+
+export async function listTagsPaged(queryRaw = '', pageRaw = 1, limitRaw = 20): Promise<TagListPage> {
+  const page = Number.isInteger(pageRaw) && pageRaw > 0 ? pageRaw : 1
+  const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? limitRaw : 20
+  const where = buildTagWhere(queryRaw)
+
+  const [tags, total] = await Promise.all([
+    prisma.tag.findMany({
+      where,
+      orderBy: [{ name: 'asc' }],
+      skip: (page - 1) * limit,
+      take: limit,
+      include: {
+        _count: { select: { skills: true } },
+      },
+    }),
+    prisma.tag.count({ where }),
+  ])
+
+  return {
+    items: tags.map(mapTagWithCount),
+    total,
+    page,
+    limit,
+    totalPages: Math.max(1, Math.ceil(total / limit)),
+  }
 }
 
 export async function createOrGetTag(nameRaw: string): Promise<RenameTagResult> {

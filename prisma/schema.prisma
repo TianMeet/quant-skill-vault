@@ -25,6 +25,12 @@ model Skill {
   drafts                  SkillDraft[]
   versions                SkillVersion[]
   publications            SkillPublication[]
+  sourceRepo              String?   @map("source_repo") @db.VarChar(191)
+  sourcePath              String?   @map("source_path") @db.VarChar(500)
+  sourceRef               String?   @map("source_ref") @db.VarChar(120)
+  sourceSha               String?   @map("source_sha") @db.VarChar(191)
+  sourceManaged           Boolean   @default(false) @map("source_managed")
+  lastSyncedAt            DateTime? @map("last_synced_at")
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @updatedAt @map("updated_at")
   createdBy               String    @default("SYS") @map("created_by") @db.VarChar(150)
@@ -97,6 +103,8 @@ model SkillFile {
   isBinary     Boolean  @default(false) @map("is_binary")
   contentText  String?  @map("content_text") @db.MediumText
   contentBytes Bytes?   @map("content_bytes") @db.MediumBlob
+  sourcePath   String?  @map("source_path") @db.VarChar(500)
+  sourceSha    String?  @map("source_sha") @db.VarChar(191)
   skill        Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")

@@ -5,13 +5,53 @@
 import * as yaml from 'js-yaml'
 import type { SkillData } from './types'
 
+const DESCRIPTION_MAX = 2048
+
+function normalizeSentence(input: string): string {
+  const text = String(input || '').replace(/\s+/g, ' ').trim()
+  if (!text) return 'the user needs this capability'
+  const stripped = text.replace(/[.。!?！?]+$/g, '')
+  return stripped || 'the user needs this capability'
+}
+
+function normalizeTriggers(triggers: string[]): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const trigger of triggers) {
+    const value = String(trigger || '').replace(/\s+/g, ' ').trim()
+    if (!value) continue
+    if (seen.has(value)) continue
+    seen.add(value)
+    result.push(value)
+  }
+  return result
+}
+
 /**
  * 生成 description：以 "This skill should be used when" 开头，包含触发短语（双引号包裹）
  */
 export function buildDescription(skill: SkillData): string {
-  const quotedTriggers = skill.triggers.map((t) => `"${t}"`)
-  const triggerList = quotedTriggers.join(', ')
-  return `This skill should be used when ${skill.summary.toLowerCase()}. Trigger phrases: ${triggerList}.`
+  const summary = normalizeSentence(skill.summary)
+  const triggers = normalizeTriggers(skill.triggers)
+  const base = `This skill should be used when ${summary}.`
+
+  if (triggers.length === 0) {
+    return base.slice(0, DESCRIPTION_MAX)
+  }
+
+  let selected = [...triggers]
+  let description = ''
+
+  while (selected.length > 0) {
+    const quoted = selected.map((t) => `"${t}"`).join(', ')
+    description = `${base} Trigger phrases include: ${quoted}.`
+    if (description.length <= DESCRIPTION_MAX) {
+      return description
+    }
+    selected = selected.slice(0, -1)
+  }
+
+  return base.slice(0, DESCRIPTION_MAX)
 }
 
 /**
@@ -63,6 +103,11 @@ export function renderSkillMarkdown(skill: SkillData, filesIndex?: string[]): st
 
   sections.push(`## Outputs\n\n${skill.outputs}`)
 
+  const triggerLines = normalizeTriggers(skill.triggers).map((t) => `- "${t}"`)
+  if (triggerLines.length > 0) {
+    sections.push(`## Trigger phrases\n\n${triggerLines.join('\n')}`)
+  }
+
   const stepsText = skill.steps.map((s, i) => `${i + 1}. ${s}`).join('\n')
   sections.push(`## Workflow\n\n${stepsText}`)
 
@@ -70,7 +115,10 @@ export function renderSkillMarkdown(skill: SkillData, filesIndex?: string[]): st
 
   // Guardrails
   const guardrailLines: string[] = []
-  guardrailLines.push(`- Escalation: ${skill.guardrails.escalation}`)
+  guardrailLines.push(`- Escalation policy: ${skill.guardrails.escalation}`)
+  guardrailLines.push(`- Allowed tools: ${skill.guardrails.allowed_tools.length > 0 ? skill.guardrails.allowed_tools.join(', ') : 'None'}`)
+  guardrailLines.push(`- User invocable: ${skill.guardrails.user_invocable ? 'true' : 'false'}`)
+  guardrailLines.push(`- Disable model invocation: ${skill.guardrails.disable_model_invocation ? 'true' : 'false'}`)
   guardrailLines.push('- Stop conditions:')
   skill.guardrails.stop_conditions.forEach((sc) => {
     guardrailLines.push(`  - ${sc}`)
@@ -79,7 +127,7 @@ export function renderSkillMarkdown(skill: SkillData, filesIndex?: string[]): st
 
   // Tests
   const testLines = skill.tests.map(
-    (t) => `### ${t.name}\n\n- Input: \`${t.input}\`\n- Expected: \`${t.expected_output}\``
+    (t, i) => `### Case ${i + 1}: ${t.name}\n\n- Input: \`${t.input}\`\n- Expected: \`${t.expected_output}\``
   )
   sections.push(`## Tests\n\n${testLines.join('\n\n')}`)
 
@@ -100,7 +148,7 @@ export function renderSkillMarkdown(skill: SkillData, filesIndex?: string[]): st
       }
       fileLines.push('')
     }
-    sections.push(`## Supporting files\n\n${fileLines.join('\n').trim()}`)
+    sections.push(`## Supporting files\n\nThe following files are bundled with this skill:\n\n${fileLines.join('\n').trim()}`)
   }
 
   return `---\n${fm}\n---\n\n# ${skill.title}\n\n${sections.join('\n\n')}\n`

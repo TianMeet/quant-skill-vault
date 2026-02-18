@@ -2,10 +2,10 @@
 
 import { Plus, Trash2 } from 'lucide-react'
 import { FormField } from '@/components/ui/form-field'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input, type FieldVisualState } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { TagPill } from '@/components/tag-pill'
 
 interface AuthorTabProps {
   roundedClass: string
@@ -16,6 +16,7 @@ interface AuthorTabProps {
   tags: string[]
   tagInput: string
   tagSuggestions: string[]
+  tagSuggestionsLoading: boolean
   canCreateTag: boolean
   createTagPreview: string
   inputs: string
@@ -48,6 +49,7 @@ export function SkillFormAuthorTab({
   tags,
   tagInput,
   tagSuggestions,
+  tagSuggestionsLoading,
   canCreateTag,
   createTagPreview,
   inputs,
@@ -121,8 +123,11 @@ export function SkillFormAuthorTab({
             <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>暂无标签</span>
           )}
           {tags.map((tag) => (
-            <Badge key={tag} variant="secondary" className={`inline-flex items-center gap-1 ${roundedClass} px-2 py-0.5 text-xs font-medium`}>
-              {tag}
+            <TagPill
+              key={tag}
+              label={tag}
+              className={roundedClass}
+              trailing={
               <Button
                 onClick={() => removeTag(tag)}
                 type="button"
@@ -132,7 +137,8 @@ export function SkillFormAuthorTab({
               >
                 ×
               </Button>
-            </Badge>
+              }
+            />
           ))}
         </div>
         <div className="flex gap-2">
@@ -151,12 +157,17 @@ export function SkillFormAuthorTab({
         </div>
         {tagInput.trim() && (
           <div className={`mt-2 border p-1 ${roundedClass}`} style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>
-            {tagSuggestions.length === 0 && !canCreateTag && (
+            {tagSuggestionsLoading && (
+              <div className="px-2 py-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                搜索中...
+              </div>
+            )}
+            {!tagSuggestionsLoading && tagSuggestions.length === 0 && !canCreateTag && (
               <div className="px-2 py-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                 没有匹配标签
               </div>
             )}
-            {tagSuggestions.map((tag) => (
+            {!tagSuggestionsLoading && tagSuggestions.map((tag) => (
               <Button
                 key={tag}
                 type="button"
@@ -168,7 +179,7 @@ export function SkillFormAuthorTab({
                 {tag}
               </Button>
             ))}
-            {canCreateTag && (
+            {!tagSuggestionsLoading && canCreateTag && (
               <Button
                 type="button"
                 variant="ghost"

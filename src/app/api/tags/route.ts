@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createOrGetTag, isServiceError, listTags } from '@/lib/tag-service'
+import { createOrGetTag, isServiceError, listTags, listTagsPaged } from '@/lib/tag-service'
 
 export const runtime = 'nodejs'
+
+function parsePositiveInt(input: string | null, fallback: number): number {
+  if (!input) return fallback
+  const parsed = Number(input)
+  if (!Number.isInteger(parsed) || parsed <= 0) return fallback
+  return parsed
+}
 
 /**
  * GET /api/tags - 获取所有标签
@@ -9,6 +16,24 @@ export const runtime = 'nodejs'
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const query = searchParams.get('query') || ''
+  const pageParam = searchParams.get('page')
+  const limitParam = searchParams.get('limit')
+  const hasPagination = pageParam !== null || limitParam !== null
+
+  if (hasPagination) {
+    const page = parsePositiveInt(pageParam, 1)
+    const limit = Math.min(100, parsePositiveInt(limitParam, 20))
+    const result = await listTagsPaged(query, page, limit)
+    return NextResponse.json({
+      items: result.items,
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+      totalPages: result.totalPages,
+      query,
+    })
+  }
+
   const items = await listTags(query)
 
   return NextResponse.json(

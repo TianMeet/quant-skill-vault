@@ -1,17 +1,20 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Download, Edit, Trash2, CheckCircle, File, ChevronLeft, Shield, Zap, FlaskConical, Copy, AlertCircle, History, UploadCloud } from 'lucide-react'
+import { Download, Edit, Trash2, CheckCircle, File, ChevronLeft, ChevronRight, Shield, Zap, FlaskConical, Copy, AlertCircle, History, UploadCloud, ExternalLink } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { SkillGuardrails, SkillTestCase } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useNotify } from '@/components/ui/notify-provider'
+import { TagPill } from '@/components/tag-pill'
 import { toFriendlyLintIssues, toUserFriendlyErrorMessage } from '@/lib/friendly-validation'
+import { FilePreviewContent } from '@/components/file-preview-content'
 
 interface SkillDetail {
   id: number
@@ -39,6 +42,16 @@ interface SkillFileItem {
   updatedAt: string
 }
 
+interface SkillFileDetail {
+  id: number
+  path: string
+  mime: string
+  isBinary: boolean
+  contentText?: string
+  contentBase64?: string
+  updatedAt: string
+}
+
 interface LintError {
   field: string
   message: string
@@ -58,6 +71,17 @@ interface SkillPublicationItem {
   version: number
   note: string | null
   publishedAt: string
+}
+
+function formatBytes(size: number): string {
+  if (!Number.isFinite(size) || size <= 0) return '0 B'
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function canRenderBinaryInWeb(mime: string): boolean {
+  return String(mime || '').toLowerCase().startsWith('image/')
 }
 
 function MarkdownBlock({ content }: { content: string }) {
@@ -87,6 +111,11 @@ export default function SkillDetailPage() {
   const [publishing, setPublishing] = useState(false)
   const [rollingVersionId, setRollingVersionId] = useState<number | null>(null)
   const [files, setFiles] = useState<SkillFileItem[]>([])
+  const [filePreviewOpen, setFilePreviewOpen] = useState(false)
+  const [filePreviewLoading, setFilePreviewLoading] = useState(false)
+  const [previewIndex, setPreviewIndex] = useState<number>(-1)
+  const [previewFile, setPreviewFile] = useState<SkillFileDetail | null>(null)
+  const previewCacheRef = useRef<Map<string, SkillFileDetail>>(new Map())
   const [versions, setVersions] = useState<SkillVersionItem[]>([])
   const [versionLoading, setVersionLoading] = useState(false)
   const [publications, setPublications] = useState<SkillPublicationItem[]>([])
@@ -289,6 +318,101 @@ export default function SkillDetailPage() {
     }
   }
 
+  const openPreviewAtIndex = useCallback(async (index: number) => {
+    if (!skillId) return
+    if (index < 0 || index >= files.length) return
+    const file = files[index]
+    setPreviewIndex(index)
+    setFilePreviewOpen(true)
+    setFilePreviewLoading(true)
+
+    if (file.isBinary && !canRenderBinaryInWeb(file.mime)) {
+      setPreviewFile({
+        id: 0,
+        path: file.path,
+        mime: file.mime,
+        isBinary: true,
+        contentText: '',
+        contentBase64: '',
+        updatedAt: file.updatedAt,
+      })
+      setFilePreviewLoading(false)
+      return
+    }
+
+    const cached = previewCacheRef.current.get(file.path)
+    if (cached) {
+      setPreviewFile(cached)
+      setFilePreviewLoading(false)
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(file.path)}`)
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        notify.error(toUserFriendlyErrorMessage(data.error || `加载文件失败（${res.status}）`))
+        setPreviewFile(null)
+        return
+      }
+      const data = (await res.json().catch(() => ({}))) as Partial<SkillFileDetail>
+      const normalized: SkillFileDetail = {
+        id: Number(data.id || 0),
+        path: typeof data.path === 'string' ? data.path : file.path,
+        mime: typeof data.mime === 'string' ? data.mime : file.mime,
+        isBinary: Boolean(data.isBinary),
+        contentText: typeof data.contentText === 'string' ? data.contentText : '',
+        contentBase64: typeof data.contentBase64 === 'string' ? data.contentBase64 : '',
+        updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : file.updatedAt,
+      }
+      previewCacheRef.current.set(file.path, normalized)
+      setPreviewFile(normalized)
+    } catch {
+      notify.error('加载文件失败，请稍后重试。')
+      setPreviewFile(null)
+    } finally {
+      setFilePreviewLoading(false)
+    }
+  }, [skillId, files, notify])
+
+  const handlePreviewFile = useCallback(async (file: SkillFileItem) => {
+    const index = files.findIndex((item) => item.path === file.path)
+    if (index < 0) return
+    await openPreviewAtIndex(index)
+  }, [files, openPreviewAtIndex])
+
+  const hasPreviewPrev = previewIndex > 0
+  const hasPreviewNext = previewIndex >= 0 && previewIndex < files.length - 1
+  const previewListMeta = previewIndex >= 0 ? files[previewIndex] : null
+
+  const handlePreviewPrev = useCallback(async () => {
+    if (!hasPreviewPrev) return
+    await openPreviewAtIndex(previewIndex - 1)
+  }, [hasPreviewPrev, previewIndex, openPreviewAtIndex])
+
+  const handlePreviewNext = useCallback(async () => {
+    if (!hasPreviewNext) return
+    await openPreviewAtIndex(previewIndex + 1)
+  }, [hasPreviewNext, previewIndex, openPreviewAtIndex])
+
+  useEffect(() => {
+    if (!filePreviewOpen) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowLeft' && hasPreviewPrev) {
+        event.preventDefault()
+        void handlePreviewPrev()
+      }
+      if (event.key === 'ArrowRight' && hasPreviewNext) {
+        event.preventDefault()
+        void handlePreviewNext()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [filePreviewOpen, hasPreviewPrev, hasPreviewNext, handlePreviewPrev, handlePreviewNext])
+
   if (loading) {
     return (
       <div className="mx-auto max-w-4xl px-6 py-8">
@@ -327,6 +451,82 @@ export default function SkillDetailPage() {
         loading={deleting}
         onConfirm={() => void confirmDelete()}
       />
+      <Dialog open={filePreviewOpen} onOpenChange={setFilePreviewOpen}>
+        <DialogContent className="grid h-[82vh] max-h-[82vh] w-[96vw] max-w-6xl min-w-0 grid-rows-[auto_1fr] gap-0 overflow-hidden border-[var(--border)] bg-[var(--card)] p-0 text-[var(--foreground)] sm:max-w-6xl">
+          <DialogHeader className="border-b px-5 py-4 pr-12 text-left" style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>
+            <DialogTitle className="truncate text-sm font-mono">{previewFile?.path || '文件预览'}</DialogTitle>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: 'var(--muted-foreground)' }}>
+              {previewFile?.mime && (
+                <span className="rounded-md border px-2 py-0.5 font-medium" style={{ borderColor: 'var(--border)', background: 'var(--muted)' }}>
+                  {previewFile.mime}
+                </span>
+              )}
+              <span>第 {previewIndex + 1 > 0 ? previewIndex + 1 : 0} / {files.length} 个</span>
+              {previewListMeta?.size !== undefined && <span>{formatBytes(previewListMeta.size)}</span>}
+              {previewFile?.updatedAt && <span>更新于 {new Date(previewFile.updatedAt).toLocaleString()}</span>}
+              <span>快捷键: ← / →</span>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-md px-2 text-xs"
+                disabled={!hasPreviewPrev || filePreviewLoading}
+                onClick={() => void handlePreviewPrev()}
+              >
+                <ChevronLeft className="mr-1 h-3.5 w-3.5" />
+                上一条
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-md px-2 text-xs"
+                disabled={!hasPreviewNext || filePreviewLoading}
+                onClick={() => void handlePreviewNext()}
+              >
+                下一条
+                <ChevronRight className="ml-1 h-3.5 w-3.5" />
+              </Button>
+              {previewFile && (
+                <Button asChild variant="ghost" size="sm" className="h-8 rounded-md px-2 text-xs">
+                  <a
+                    href={`/api/skills/${skill.id}/files?path=${encodeURIComponent(previewFile.path)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <ExternalLink className="mr-1 h-3.5 w-3.5" />
+                    查看原始数据
+                  </a>
+                </Button>
+              )}
+            </div>
+          </DialogHeader>
+          <div className="min-h-0 min-w-0 p-4" style={{ background: 'var(--card)' }}>
+            {filePreviewLoading ? (
+              <div className="skeleton h-full w-full rounded-md" />
+            ) : previewFile ? (
+              <div
+                className="h-full min-w-0 overflow-hidden rounded-xl border p-2 shadow-[var(--shadow-sm)]"
+                style={{ borderColor: 'var(--border)', background: 'color-mix(in srgb, var(--muted) 45%, var(--card))' }}
+              >
+                <FilePreviewContent
+                  path={previewFile.path}
+                  mime={previewFile.mime}
+                  isBinary={previewFile.isBinary}
+                  contentText={previewFile.contentText}
+                  contentBase64={previewFile.contentBase64}
+                  className="h-full rounded-lg"
+                  embedded
+                />
+              </div>
+            ) : (
+              <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>暂无可预览内容</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Breadcrumb */}
       <Link
@@ -354,13 +554,10 @@ export default function SkillDetailPage() {
           {skill.tags.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1.5">
               {skill.tags.map((tag) => (
-                <Badge
+                <TagPill
                   key={tag}
-                  variant="secondary"
-                  className="rounded-md px-2.5 py-0.5 text-xs font-medium"
-                >
-                  {tag}
-                </Badge>
+                  label={tag}
+                />
               ))}
             </div>
           )}
@@ -555,13 +752,14 @@ export default function SkillDetailPage() {
                 <div key={f.path} className="flex items-center justify-between rounded-lg p-2.5 transition-colors" style={{ background: 'var(--muted)' }}>
                   <div className="flex items-center gap-2.5">
                     <File className="h-4 w-4" style={{ color: 'var(--muted-foreground)' }} />
-                    <a
-                      href={`/api/skills/${skill.id}/files?path=${encodeURIComponent(f.path)}`}
-                      className="text-sm font-mono hover:opacity-70 transition-opacity"
+                    <button
+                      type="button"
+                      onClick={() => void handlePreviewFile(f)}
+                      className="text-left text-sm font-mono hover:opacity-70 transition-opacity"
                       style={{ color: 'var(--accent)' }}
                     >
                       {f.path}
-                    </a>
+                    </button>
                   </div>
                   <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{f.mime}</span>
                 </div>

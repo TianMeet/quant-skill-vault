@@ -36,6 +36,13 @@ function parseBracketCount(message: string): number | null {
   return Number.isFinite(value) ? value : null
 }
 
+function parseDescriptionLimit(message: string): number | null {
+  const match = message.match(/exceeds\s+(\d+)\s+characters/i)
+  if (!match) return null
+  const value = Number(match[1])
+  return Number.isFinite(value) ? value : null
+}
+
 function mapPathValidationDetail(detail: string): string {
   if (detail.includes('path must not start with /')) {
     return '文件路径不能以 / 开头，请使用相对路径。'
@@ -121,12 +128,13 @@ function mapLintError(error: LintError): FriendlyValidationIssue {
     }
   }
 
-  if (error.field === 'description' && raw.includes('exceeds 1024')) {
+  if (error.field === 'description' && raw.includes('exceeds')) {
     const count = parseBracketCount(raw)
+    const limit = parseDescriptionLimit(raw)
     return {
       field: error.field,
       fieldLabel,
-      message: `描述过长${count !== null ? `（当前 ${count} 字符）` : ''}，需要控制在 1024 字符内。`,
+      message: `描述过长${count !== null ? `（当前 ${count} 字符）` : ''}，需要控制在 ${limit ?? 2048} 字符内。`,
       suggestion: '可以适当精简摘要或触发词。',
     }
   }

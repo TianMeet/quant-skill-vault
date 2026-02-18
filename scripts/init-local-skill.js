@@ -45,7 +45,7 @@ for (const dir of ['references', 'examples', 'scripts', 'assets', 'templates']) 
 
 const skillMd = `---
 name: ${skillName}
-description: This skill should be used when you need to ${skillName.replace(/-/g, ' ')}.
+description: This skill should be used when you need to ${skillName.replace(/-/g, ' ')}. Trigger phrases include: "${skillName.replace(/-/g, ' ')}".
 allowed-tools: []
 disable-model-invocation: false
 user-invocable: true
@@ -65,6 +65,12 @@ Briefly explain what this skill solves and when to use it.
 ## Outputs
 
 - Output format and quality bar
+
+## Trigger phrases
+
+- "${skillName.replace(/-/g, ' ')}"
+- "help me with ${skillName.replace(/-/g, ' ')}"
+- "run ${skillName.replace(/-/g, ' ')} workflow"
 
 ## Workflow
 

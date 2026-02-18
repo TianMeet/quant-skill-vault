@@ -1,13 +1,23 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { Search, Download, ArrowRight, Package, Tag, Trash2, LayoutGrid, List } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useNotify } from '@/components/ui/notify-provider'
+import { TagCountPill, TagPill } from '@/components/tag-pill'
 import { toFriendlyLintSummary, toUserFriendlyErrorMessage } from '@/lib/friendly-validation'
 import { normalizeTagNames } from '@/lib/tag-normalize'
 
@@ -27,11 +37,31 @@ interface Tag {
 }
 
 const VIEW_MODE_STORAGE_KEY = 'qsv:skills:view-mode:v1'
+const PAGINATION_ELLIPSIS = 'ellipsis'
+const SEARCH_DEBOUNCE_MS = 400
+const SEARCH_THROTTLE_MS = 900
+
+function getVisiblePages(currentPage: number, totalPages: number): Array<number | typeof PAGINATION_ELLIPSIS> {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1)
+  }
+
+  if (currentPage <= 4) {
+    return [1, 2, 3, 4, 5, PAGINATION_ELLIPSIS, totalPages]
+  }
+
+  if (currentPage >= totalPages - 3) {
+    return [1, PAGINATION_ELLIPSIS, totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages]
+  }
+
+  return [1, PAGINATION_ELLIPSIS, currentPage - 1, currentPage, currentPage + 1, PAGINATION_ELLIPSIS, totalPages]
+}
 
 export default function SkillsListPage() {
   const notify = useNotify()
   const [skills, setSkills] = useState<Skill[]>([])
   const [tags, setTags] = useState<Tag[]>([])
+  const [queryInput, setQueryInput] = useState('')
   const [query, setQuery] = useState('')
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [page, setPage] = useState(1)
@@ -42,10 +72,13 @@ export default function SkillsListPage() {
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
   const [loading, setLoading] = useState(true)
+  const [hasFetchedOnce, setHasFetchedOnce] = useState(false)
   const [selectedSkillIds, setSelectedSkillIds] = useState<number[]>([])
   const [batchTagInput, setBatchTagInput] = useState('')
   const [batchLoading, setBatchLoading] = useState(false)
   const [batchDeleteDialogOpen, setBatchDeleteDialogOpen] = useState(false)
+  const lastQueryCommitAtRef = useRef(0)
+  const hasFetchedOnceRef = useRef(false)
 
   const fetchTags = useCallback(async () => {
     try {
@@ -62,7 +95,7 @@ export default function SkillsListPage() {
     }
   }, [])
 
-  const fetchSkills = useCallback(async () => {
+  const fetchSkills = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
     const params = new URLSearchParams()
     if (query) params.set('query', query)
@@ -71,7 +104,7 @@ export default function SkillsListPage() {
     params.set('limit', String(limit))
     params.set('sort', sort)
     try {
-      const res = await fetch(`/api/skills?${params}`)
+      const res = await fetch(`/api/skills?${params}`, { signal })
       if (res.ok) {
         const data = await res.json().catch(() => ({}))
         if (Array.isArray(data)) {
@@ -86,18 +119,29 @@ export default function SkillsListPage() {
         }
       } else {
         const data = await res.json().catch(() => ({}))
+        if (!hasFetchedOnceRef.current) {
+          setSkills([])
+          setTotal(0)
+          setTotalPages(1)
+        }
+        notify.error(toUserFriendlyErrorMessage(data.error || `加载失败（${res.status}）`))
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
+      if (!hasFetchedOnceRef.current) {
         setSkills([])
         setTotal(0)
         setTotalPages(1)
-        notify.error(toUserFriendlyErrorMessage(data.error || `加载失败（${res.status}）`))
       }
-    } catch {
-      setSkills([])
-      setTotal(0)
-      setTotalPages(1)
       notify.error('加载列表失败，请稍后重试。')
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) {
+        setLoading(false)
+        if (!hasFetchedOnceRef.current) {
+          hasFetchedOnceRef.current = true
+          setHasFetchedOnce(true)
+        }
+      }
     }
   }, [query, selectedTags, page, limit, sort, notify])
 
@@ -106,8 +150,22 @@ export default function SkillsListPage() {
   }, [fetchTags])
 
   useEffect(() => {
-    void fetchSkills()
+    const controller = new AbortController()
+    void fetchSkills(controller.signal)
+    return () => controller.abort()
   }, [fetchSkills])
+
+  useEffect(() => {
+    if (queryInput === query) return
+    const elapsed = Date.now() - lastQueryCommitAtRef.current
+    const throttleDelay = Math.max(0, SEARCH_THROTTLE_MS - elapsed)
+    const delay = Math.max(SEARCH_DEBOUNCE_MS, throttleDelay)
+    const timer = window.setTimeout(() => {
+      lastQueryCommitAtRef.current = Date.now()
+      setQuery(queryInput)
+    }, delay)
+    return () => window.clearTimeout(timer)
+  }, [queryInput, query])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -160,6 +218,7 @@ export default function SkillsListPage() {
   }
 
   const selectedCount = selectedSkillIds.length
+  const visiblePages = useMemo(() => getVisiblePages(page, Math.max(1, totalPages)), [page, totalPages])
   const allCurrentPageSelected = useMemo(() => {
     if (skills.length === 0) return false
     return skills.every((skill) => selectedSkillIds.includes(skill.id))
@@ -284,8 +343,8 @@ export default function SkillsListPage() {
           <Input
             type="text"
             placeholder="搜索 Skill..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            value={queryInput}
+            onChange={(e) => setQueryInput(e.target.value)}
             className="w-full rounded-lg py-2.5 pl-10 pr-4 text-sm"
           />
         </div>
@@ -293,33 +352,37 @@ export default function SkillsListPage() {
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1">
             <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>排序</span>
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value)}
-              className="h-8 rounded-md border px-2 text-xs"
-              style={{ borderColor: 'var(--border)', background: 'var(--card)' }}
-            >
-              <option value="updated_desc">最近更新</option>
-              <option value="updated_asc">最早更新</option>
-              <option value="created_desc">最近创建</option>
-              <option value="created_asc">最早创建</option>
-              <option value="title_asc">标题 A-Z</option>
-              <option value="title_desc">标题 Z-A</option>
-            </select>
+            <Select value={sort} onValueChange={setSort}>
+              <SelectTrigger
+                className="h-8 w-[132px] rounded-md border-[var(--border)] bg-[var(--card)] px-2 text-xs"
+              >
+                <SelectValue placeholder="排序" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="updated_desc">最近更新</SelectItem>
+                <SelectItem value="updated_asc">最早更新</SelectItem>
+                <SelectItem value="created_desc">最近创建</SelectItem>
+                <SelectItem value="created_asc">最早创建</SelectItem>
+                <SelectItem value="title_asc">标题 A-Z</SelectItem>
+                <SelectItem value="title_desc">标题 Z-A</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex items-center gap-1">
             <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>每页</span>
-            <select
-              value={limit}
-              onChange={(e) => setLimit(Number(e.target.value))}
-              className="h-8 rounded-md border px-2 text-xs"
-              style={{ borderColor: 'var(--border)', background: 'var(--card)' }}
-            >
-              <option value={6}>6</option>
-              <option value={9}>9</option>
-              <option value={12}>12</option>
-              <option value={18}>18</option>
-            </select>
+            <Select value={String(limit)} onValueChange={(value) => setLimit(Number(value))}>
+              <SelectTrigger
+                className="h-8 w-[78px] rounded-md border-[var(--border)] bg-[var(--card)] px-2 text-xs"
+              >
+                <SelectValue placeholder="每页" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="6">6</SelectItem>
+                <SelectItem value="9">9</SelectItem>
+                <SelectItem value="12">12</SelectItem>
+                <SelectItem value="18">18</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
             共 {total} 条
@@ -400,7 +463,7 @@ export default function SkillsListPage() {
         )}
       </div>
 
-      {loading ? (
+      {!hasFetchedOnce && loading ? (
         viewMode === 'card' ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {[1, 2, 3].map((i) => (
@@ -444,6 +507,11 @@ export default function SkillsListPage() {
         </div>
       ) : (
         <div className="space-y-4">
+          {loading && (
+            <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
+              正在更新列表...
+            </div>
+          )}
           <div className="flex items-center justify-between rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>
             <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
               <input
@@ -507,23 +575,18 @@ export default function SkillsListPage() {
                     {skill.tags.length > 0 ? (
                       <div className="flex flex-nowrap items-center gap-1.5 overflow-hidden">
                         {skill.tags.slice(0, 3).map((tag) => (
-                          <Badge
+                          <TagPill
                             key={tag}
-                            variant="secondary"
-                            className="max-w-[110px] truncate rounded-md px-2 py-0.5 text-xs font-medium"
+                            className="max-w-[110px]"
                             title={tag}
-                          >
-                            {tag}
-                          </Badge>
+                            label={tag}
+                          />
                         ))}
                         {skill.tags.length > 3 && (
-                          <Badge
-                            variant="secondary"
-                            className="rounded-md px-2 py-0.5 text-xs font-medium"
+                          <TagCountPill
                             title={`${skill.tags.length - 3} 个额外标签`}
-                          >
-                            +{skill.tags.length - 3}
-                          </Badge>
+                            label={`+${skill.tags.length - 3}`}
+                          />
                         )}
                       </div>
                     ) : (
@@ -585,19 +648,15 @@ export default function SkillsListPage() {
                       {skill.tags.length > 0 ? (
                         <>
                           {skill.tags.slice(0, 2).map((tag) => (
-                            <Badge
+                            <TagPill
                               key={tag}
-                              variant="secondary"
-                              className="max-w-[120px] truncate rounded-md px-2 py-0.5 text-xs font-medium"
+                              className="max-w-[120px]"
                               title={tag}
-                            >
-                              {tag}
-                            </Badge>
+                              label={tag}
+                            />
                           ))}
                           {skill.tags.length > 2 && (
-                            <Badge variant="secondary" className="rounded-md px-2 py-0.5 text-xs font-medium">
-                              +{skill.tags.length - 2}
-                            </Badge>
+                            <TagCountPill label={`+${skill.tags.length - 2}`} />
                           )}
                         </>
                       ) : (
@@ -626,32 +685,65 @@ export default function SkillsListPage() {
             </div>
           )}
 
-          <div className="flex items-center justify-between rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>
+          <div
+            className="flex flex-col items-start justify-between gap-2 rounded-lg border px-3 py-2 sm:flex-row sm:items-center"
+            style={{ borderColor: 'var(--border)', background: 'var(--card)' }}
+          >
             <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
               第 {page}/{Math.max(1, totalPages)} 页
             </span>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="rounded-md"
-                disabled={loading || page <= 1}
-                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-              >
-                上一页
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="rounded-md"
-                disabled={loading || page >= Math.max(1, totalPages)}
-                onClick={() => setPage((prev) => Math.min(Math.max(1, totalPages), prev + 1))}
-              >
-                下一页
-              </Button>
-            </div>
+
+            <Pagination className="mx-0 w-auto">
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      if (loading || page <= 1) return
+                      setPage((prev) => Math.max(1, prev - 1))
+                    }}
+                    className={loading || page <= 1 ? 'pointer-events-none opacity-50' : undefined}
+                  />
+                </PaginationItem>
+
+                {visiblePages.map((item, idx) => (
+                  <PaginationItem key={`${item}-${idx}`}>
+                    {item === PAGINATION_ELLIPSIS ? (
+                      <PaginationEllipsis />
+                    ) : (
+                      <PaginationLink
+                        href="#"
+                        isActive={item === page}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          if (loading || item === page) return
+                          setPage(item)
+                        }}
+                        className={loading ? 'pointer-events-none opacity-50' : undefined}
+                      >
+                        {item}
+                      </PaginationLink>
+                    )}
+                  </PaginationItem>
+                ))}
+
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      const max = Math.max(1, totalPages)
+                      if (loading || page >= max) return
+                      setPage((prev) => Math.min(max, prev + 1))
+                    }}
+                    className={
+                      loading || page >= Math.max(1, totalPages) ? 'pointer-events-none opacity-50' : undefined
+                    }
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
           </div>
         </div>
       )}

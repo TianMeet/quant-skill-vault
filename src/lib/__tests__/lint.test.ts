@@ -147,15 +147,15 @@ describe('lintSkill', () => {
 
   // description length
   describe('description length', () => {
-    it('should fail if generated description exceeds 1024 characters', () => {
-      const longTrigger = 'a'.repeat(500)
+    it('should pass when generated description is auto-truncated to 2048 characters', () => {
+      const longTrigger = 'a'.repeat(900)
       const result = lintSkill(
         makeValidSkill({
           triggers: [longTrigger, longTrigger, longTrigger],
         })
       )
-      expect(result.valid).toBe(false)
-      expect(result.errors.some(e => e.field === 'description')).toBe(true)
+      expect(result.valid).toBe(true)
+      expect(result.errors.some(e => e.field === 'description')).toBe(false)
     })
   })
 })

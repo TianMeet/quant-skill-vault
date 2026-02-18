@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { ArrowRightLeft, File as FileIcon, Plus, Trash2, Upload } from 'lucide-react'
+import { ArrowRightLeft, Eye, File as FileIcon, Pencil, Plus, Trash2, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { FilePreviewContent } from '@/components/file-preview-content'
 
 export interface SkillFileItem {
   path: string
@@ -29,6 +30,7 @@ interface FilesTabProps {
   files: SkillFileItem[]
   selectedFile: SkillFileItem | null
   fileContent: string
+  fileContentBase64: string
   newFileDir: string
   setNewFileDir: (value: string) => void
   newFileName: string
@@ -53,6 +55,7 @@ export function SkillFormFilesTab({
   files,
   selectedFile,
   fileContent,
+  fileContentBase64,
   newFileDir,
   setNewFileDir,
   newFileName,
@@ -79,6 +82,7 @@ export function SkillFormFilesTab({
   const [moveDir, setMoveDir] = useState(initialDirAndName.dir)
   const [moveName, setMoveName] = useState(initialDirAndName.name)
   const [dragging, setDragging] = useState(false)
+  const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
 
   const moveTargetPath = useMemo(
     () => `${moveDir}/${moveName.trim()}`,
@@ -155,6 +159,7 @@ export function SkillFormFilesTab({
                         const [dir, ...rest] = f.path.split('/')
                         if (ALLOWED_DIRS.includes(dir)) setMoveDir(dir)
                         setMoveName(rest.join('/'))
+                        setViewMode(f.isBinary ? 'preview' : 'edit')
                         void handleSelectFile(f)
                       }}
                       type="button"
@@ -221,18 +226,58 @@ export function SkillFormFilesTab({
               </div>
 
               {selectedFile.isBinary ? (
-                <p className="text-sm p-4" style={{ color: 'var(--muted-foreground)' }}>
-                  二进制文件：{selectedFile.path} ({selectedFile.mime})
-                </p>
+                <FilePreviewContent
+                  path={selectedFile.path}
+                  mime={selectedFile.mime}
+                  isBinary
+                  contentBase64={fileContentBase64}
+                  className="min-h-[250px]"
+                />
               ) : (
                 <div className="flex flex-1 flex-col">
                   <div className="mb-2 flex items-center justify-between">
                     <span className="text-xs font-mono" style={{ color: 'var(--muted-foreground)' }}>{selectedFile.path}</span>
-                    <Button onClick={() => void handleSaveFile()} type="button" disabled={fileSaving} size="sm" className={`${roundedClass} h-7 px-3 text-xs`}>
-                      {fileSaving ? '保存中...' : '保存'}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <div className="inline-flex items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={viewMode === 'edit' ? 'default' : 'ghost'}
+                          className="h-6 px-2 text-[11px]"
+                          onClick={() => setViewMode('edit')}
+                        >
+                          <Pencil className="mr-1 h-3.5 w-3.5" />
+                          编辑
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={viewMode === 'preview' ? 'default' : 'ghost'}
+                          className="h-6 px-2 text-[11px]"
+                          onClick={() => setViewMode('preview')}
+                        >
+                          <Eye className="mr-1 h-3.5 w-3.5" />
+                          预览
+                        </Button>
+                      </div>
+                      {viewMode === 'edit' && (
+                        <Button onClick={() => void handleSaveFile()} type="button" disabled={fileSaving} size="sm" className={`${roundedClass} h-7 px-3 text-xs`}>
+                          {fileSaving ? '保存中...' : '保存'}
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  <Textarea value={fileContent} onChange={(e) => setFileContent(e.target.value)} className="flex-1 w-full rounded min-h-[250px] font-mono resize-none" />
+                  {viewMode === 'edit' ? (
+                    <Textarea value={fileContent} onChange={(e) => setFileContent(e.target.value)} className="flex-1 w-full rounded min-h-[250px] font-mono resize-none" />
+                  ) : (
+                    <FilePreviewContent
+                      path={selectedFile.path}
+                      mime={selectedFile.mime}
+                      isBinary={false}
+                      contentText={fileContent}
+                      className="min-h-[250px]"
+                    />
+                  )}
                 </div>
               )}
             </div>

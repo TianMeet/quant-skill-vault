@@ -8,6 +8,7 @@ import { validateSkillFilePath } from './skill-files'
 
 const SLUG_REGEX = /^[a-z0-9-]{1,64}$/
 const VALID_ESCALATIONS = ['REVIEW', 'BLOCK', 'ASK_HUMAN']
+const DESCRIPTION_MAX = 2048
 
 export function lintSkill(skill: SkillData): LintResult {
   const errors: LintError[] = []
@@ -31,10 +32,10 @@ export function lintSkill(skill: SkillData): LintResult {
   // description 长度校验（由 summary + triggers 生成）
   if (skill.triggers && skill.triggers.length >= 3) {
     const desc = buildDescription(skill)
-    if (desc.length > 1024) {
+    if (desc.length > DESCRIPTION_MAX) {
       errors.push({
         field: 'description',
-        message: `generated description exceeds 1024 characters (${desc.length})`,
+        message: `generated description exceeds ${DESCRIPTION_MAX} characters (${desc.length})`,
       })
     }
   }

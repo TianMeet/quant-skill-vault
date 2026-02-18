@@ -196,7 +196,7 @@ pnpm skill:validate -- ./local-skills/my-new-skill
 校验内容包括：
 - frontmatter 必填字段（`name`, `description`）
 - `name` 格式（`^[a-z0-9-]{1,64}$`）
-- `description` 长度（<= 1024）
+- `description` 长度（<= 2048）
 - 相对链接文件存在性与路径安全性
 
 ### 3) 打包为 `.skill`
@@ -206,6 +206,28 @@ pnpm skill:package -- ./local-skills/my-new-skill
 ```
 
 输出示例：`./local-skills/my-new-skill.skill`
+
+## 同步 Anthropic 官方 Skills（含 supporting files）
+
+将 `anthropics/skills` 仓库中 `skills/` 下官方技能同步到本地数据库，并自动处理目录映射与增量更新。
+
+```bash
+# 预览变更（不写库）
+pnpm skill:sync:anthropic:dry
+
+# 实际写入（创建/更新 source-managed 官方技能）
+pnpm skill:sync:anthropic -- --apply
+
+# 指定上游 ref（分支 / tag / commit）
+pnpm skill:sync:anthropic -- --apply --ref main
+```
+
+规则说明：
+- 导入范围：`skills/` 下非隐藏目录（默认官方业务技能）
+- `SKILL.md` 解析为结构化 Skill 字段
+- supporting files 全量导入 `skill_files`（二进制也保留）
+- 非白名单目录自动映射到 `assets/upstream/*`
+- 对已存在且非 `sourceManaged` 的同名技能，标记冲突并跳过
 
 ## 项目结构
 

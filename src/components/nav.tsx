@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { Layers, Plus, MessageSquarePlus } from 'lucide-react'
+import { Home, Layers, Plus, MessageSquarePlus } from 'lucide-react'
 import { useChatPanel } from '@/lib/chat/chat-context'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { Button } from '@/components/ui/button'
@@ -11,9 +11,14 @@ import { Button } from '@/components/ui/button'
 export function Nav() {
   const pathname = usePathname()
   const { toggle } = useChatPanel()
+  const isCreatePage = pathname === '/skills/new'
 
   const links = [
-    { href: '/skills', label: '技能列表', match: (p: string) => p === '/skills' },
+    {
+      href: '/skills',
+      label: '技能列表',
+      match: (p: string) => p === '/skills' || (p.startsWith('/skills/') && p !== '/skills/new'),
+    },
     { href: '/drafts', label: '草稿管理', match: (p: string) => p === '/drafts' },
     { href: '/tags', label: '标签管理', match: (p: string) => p === '/tags' },
   ]
@@ -68,12 +73,21 @@ export function Nav() {
             <MessageSquarePlus className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
             <span className="hidden sm:inline">AI 对话</span>
           </Button>
-          <Button asChild className="rounded-lg px-3.5">
-            <Link href="/skills/new">
-              <Plus className="h-3.5 w-3.5" />
-              新建 Skill
-            </Link>
-          </Button>
+          {isCreatePage ? (
+            <Button asChild variant="outline" className="rounded-lg px-3.5">
+              <Link href="/skills">
+                <Home className="h-3.5 w-3.5" />
+                返回主页
+              </Link>
+            </Button>
+          ) : (
+            <Button asChild className="rounded-lg px-3.5">
+              <Link href="/skills/new">
+                <Plus className="h-3.5 w-3.5" />
+                新建 Skill
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
     </header>
