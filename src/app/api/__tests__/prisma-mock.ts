@@ -8,9 +8,11 @@ import { vi } from 'vitest'
 const mockSkills: Map<number, Record<string, unknown>> = new Map()
 const mockTags: Map<number, Record<string, unknown>> = new Map()
 const mockFiles: Map<number, Record<string, unknown>> = new Map()
+const mockDrafts: Map<number, Record<string, unknown>> = new Map()
 let skillIdCounter = 1
 let tagIdCounter = 1
 let fileIdCounter = 1
+let draftIdCounter = 1
 
 function makePrismaError(code: string, message: string) {
   return Object.assign(new Error(message), { code })
@@ -171,9 +173,11 @@ export function resetMockDb() {
   mockSkills.clear()
   mockTags.clear()
   mockFiles.clear()
+  mockDrafts.clear()
   skillIdCounter = 1
   tagIdCounter = 1
   fileIdCounter = 1
+  draftIdCounter = 1
   vi.clearAllMocks()
 }
 
@@ -204,6 +208,10 @@ export function getMockTags() {
 
 export function getMockFiles() {
   return mockFiles
+}
+
+export function getMockDrafts() {
+  return mockDrafts
 }
 
 export const prismaMock = {
@@ -486,11 +494,125 @@ export const prismaMock = {
     }),
   },
 
+  skillDraft: {
+    findMany: vi.fn(async (args?: {
+      where?: Record<string, unknown>
+      orderBy?: Record<string, string>
+      take?: number
+      select?: Record<string, boolean>
+    }) => {
+      let results = Array.from(mockDrafts.values())
+
+      if (args?.where?.mode) {
+        results = results.filter((draft) => draft.mode === args.where?.mode)
+      }
+
+      if (args?.orderBy?.updatedAt) {
+        const direction = args.orderBy.updatedAt
+        results = results.sort((a, b) => {
+          const ta = new Date(String(a.updatedAt)).getTime()
+          const tb = new Date(String(b.updatedAt)).getTime()
+          return direction === 'desc' ? tb - ta : ta - tb
+        })
+      }
+
+      if (typeof args?.take === 'number') {
+        results = results.slice(0, args.take)
+      }
+
+      if (args?.select) {
+        return results.map((draft) => {
+          const out: Record<string, unknown> = {}
+          for (const [key, enabled] of Object.entries(args.select || {})) {
+            if (enabled) out[key] = draft[key]
+          }
+          return out
+        })
+      }
+
+      return results.map((draft) => ({ ...draft }))
+    }),
+
+    findUnique: vi.fn(async (args: { where: { id?: number; draftKey?: string } }) => {
+      if (args.where.id) {
+        return mockDrafts.get(args.where.id) || null
+      }
+      if (args.where.draftKey) {
+        for (const [, draft] of mockDrafts) {
+          if (draft.draftKey === args.where.draftKey) return { ...draft }
+        }
+      }
+      return null
+    }),
+
+    create: vi.fn(async (args: { data: Record<string, unknown> }) => {
+      for (const [, draft] of mockDrafts) {
+        if (draft.draftKey === args.data.draftKey) {
+          throw makePrismaError('P2002', 'Unique constraint failed on draftKey')
+        }
+      }
+      const id = draftIdCounter++
+      const now = new Date()
+      const draft = {
+        id,
+        createdAt: now,
+        updatedAt: now,
+        ...args.data,
+      }
+      mockDrafts.set(id, draft)
+      return { ...draft }
+    }),
+
+    update: vi.fn(async (args: { where: { id?: number; draftKey?: string }; data: Record<string, unknown> }) => {
+      let targetId: number | null = null
+
+      if (args.where.id) {
+        targetId = args.where.id
+      } else if (args.where.draftKey) {
+        for (const [id, draft] of mockDrafts) {
+          if (draft.draftKey === args.where.draftKey) {
+            targetId = id
+            break
+          }
+        }
+      }
+
+      if (!targetId) throw makePrismaError('P2025', 'Record to update does not exist')
+      const current = mockDrafts.get(targetId)
+      if (!current) throw makePrismaError('P2025', 'Record to update does not exist')
+
+      const updated = { ...current, ...args.data, updatedAt: new Date() }
+      mockDrafts.set(targetId, updated)
+      return { ...updated }
+    }),
+
+    delete: vi.fn(async (args: { where: { id?: number; draftKey?: string } }) => {
+      if (args.where.id) {
+        const current = mockDrafts.get(args.where.id)
+        if (!current) throw makePrismaError('P2025', 'Record to delete does not exist')
+        mockDrafts.delete(args.where.id)
+        return current
+      }
+
+      if (args.where.draftKey) {
+        for (const [id, draft] of mockDrafts) {
+          if (draft.draftKey === args.where.draftKey) {
+            mockDrafts.delete(id)
+            return draft
+          }
+        }
+      }
+
+      throw makePrismaError('P2025', 'Record to delete does not exist')
+    }),
+  },
+
   $transaction: vi.fn(async (fn: (tx: typeof prismaMock) => Promise<unknown>) => {
     const skillSnap = cloneMap(mockSkills)
     const tagSnap = cloneMap(mockTags)
     const fileSnap = cloneMap(mockFiles)
-    const counters = { skillIdCounter, tagIdCounter, fileIdCounter }
+    const draftSnap = cloneMap(mockDrafts)
+    const counters = { skillIdCounter, tagIdCounter, fileIdCounter, draftIdCounter }
 
     try {
       return await fn(prismaMock as unknown as typeof prismaMock)
@@ -498,9 +620,11 @@ export const prismaMock = {
       restoreMap(mockSkills, skillSnap)
       restoreMap(mockTags, tagSnap)
       restoreMap(mockFiles, fileSnap)
+      restoreMap(mockDrafts, draftSnap)
       skillIdCounter = counters.skillIdCounter
       tagIdCounter = counters.tagIdCounter
       fileIdCounter = counters.fileIdCounter
+      draftIdCounter = counters.draftIdCounter
       throw err
     }
   }),

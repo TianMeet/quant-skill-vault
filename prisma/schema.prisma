@@ -21,12 +21,28 @@ model Skill {
   tests                   Json      // { name, input, expected_output }[]
   tags                    SkillTag[]
   files                   SkillFile[]
+  drafts                  SkillDraft[]
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @updatedAt @map("updated_at")
   createdBy               String    @default("SYS") @map("created_by") @db.VarChar(150)
   updatedBy               String    @default("SYS") @map("updated_by") @db.VarChar(150)
 
   @@map("skills")
+}
+
+model SkillDraft {
+  id        Int      @id @default(autoincrement())
+  draftKey  String   @unique @map("draft_key") @db.VarChar(120)
+  mode      String   @db.VarChar(20)
+  skillId   Int?     @map("skill_id")
+  payload   Json
+  version   Int      @default(1)
+  skill     Skill?   @relation(fields: [skillId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([updatedAt])
+  @@map("skill_drafts")
 }
 
 model Tag {

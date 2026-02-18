@@ -25,8 +25,35 @@ interface SkillFormProps {
   variant?: 'default' | 'industrial'
 }
 
-const DRAFT_STORAGE_KEY = 'qsv:new-skill-draft:v1'
+type DraftPayload = Partial<SkillData & { tags: string[]; activeTab: string }>
+
+type DraftEnvelope = {
+  version?: number
+  updatedAt?: number
+  data?: DraftPayload
+}
+
+type RemoteDraftResponse = {
+  payload?: DraftPayload
+  version?: number
+}
+
+const LEGACY_NEW_DRAFT_STORAGE_KEY = 'qsv:new-skill-draft:v1'
+const DRAFT_STORAGE_PREFIX = 'qsv:skill-draft:v2'
+const DRAFT_CLIENT_ID_KEY = 'qsv:draft-client-id'
 const AUTOSAVE_DEBOUNCE_MS = 450
+
+function randomDraftClientId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function normalizeDraftPayload(raw: unknown): DraftPayload | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  return raw as DraftPayload
+}
 
 export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFormProps) {
   const router = useRouter()
@@ -78,6 +105,13 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   const [draftHydrated, setDraftHydrated] = useState(false)
   const [draftRestoredAt, setDraftRestoredAt] = useState<number | null>(null)
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
+  const [draftVersion, setDraftVersion] = useState<number | null>(null)
+  const [draftSource, setDraftSource] = useState<'server' | 'local' | null>(null)
+  const [draftClientId, setDraftClientId] = useState<string | null>(null)
+  const draftVersionRef = useRef<number | null>(null)
+  const draftSaveInFlightRef = useRef(false)
+  const draftSaveQueuedRef = useRef(false)
+  const serverDraftWarnedRef = useRef(false)
 
   // AI tab state (保持本地)
   const [aiInstruction, setAiInstruction] = useState('')
@@ -90,6 +124,16 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   const [aiPreviewFile, setAiPreviewFile] = useState<string | null>(null)
 
   const ALLOWED_DIRS = ['references', 'examples', 'scripts', 'assets', 'templates']
+  const draftMode = isEdit ? 'edit' : 'new'
+  const draftEntityId = isEdit ? String(skillId || 0) : 'new'
+  const localDraftStorageKey = draftClientId
+    ? `${DRAFT_STORAGE_PREFIX}:${draftMode}:${draftEntityId}:${draftClientId}`
+    : null
+  const remoteDraftKey = draftClientId ? `${draftMode}:${draftEntityId}:${draftClientId}` : null
+
+  useEffect(() => {
+    draftVersionRef.current = draftVersion
+  }, [draftVersion])
 
   const loadFiles = useCallback(async () => {
     if (!skillId) return
@@ -102,22 +146,23 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   }, [skillId, loadFiles])
 
   useEffect(() => {
-    if (isEdit || restoredDraftRef.current || typeof window === 'undefined') {
-      setDraftHydrated(true)
-      return
-    }
-
-    restoredDraftRef.current = true
+    if (typeof window === 'undefined') return
     try {
-      const raw = window.localStorage.getItem(DRAFT_STORAGE_KEY)
-      if (!raw) return
-
-      const parsed = JSON.parse(raw) as {
-        data?: Partial<SkillData & { tags: string[]; activeTab: string }>
+      const existing = window.localStorage.getItem(DRAFT_CLIENT_ID_KEY)
+      if (existing) {
+        setDraftClientId(existing)
+        return
       }
-      const data = parsed?.data
-      if (!data || typeof data !== 'object') return
+      const created = randomDraftClientId()
+      window.localStorage.setItem(DRAFT_CLIENT_ID_KEY, created)
+      setDraftClientId(created)
+    } catch {
+      setDraftClientId(`fallback-${randomDraftClientId()}`)
+    }
+  }, [])
 
+  const applyDraftPayload = useCallback(
+    (data: DraftPayload) => {
       initFromData({
         title: typeof data.title === 'string' ? data.title : '',
         summary: typeof data.summary === 'string' ? data.summary : '',
@@ -146,47 +191,12 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       if (typeof data.activeTab === 'string') {
         setUIField('activeTab', data.activeTab)
       }
-
-      setDraftRestoredAt(Date.now())
-    } catch {
-      // ignore invalid local draft payload
-    } finally {
-      setDraftHydrated(true)
-    }
-  }, [isEdit, initFromData, setUIField])
-
-  const persistLocalDraft = useCallback(
-    (markSavedAt = true) => {
-      if (isEdit || !draftHydrated || typeof window === 'undefined') return
-      try {
-        window.localStorage.setItem(
-          DRAFT_STORAGE_KEY,
-          JSON.stringify({
-            version: 1,
-            updatedAt: Date.now(),
-            data: {
-              title,
-              summary,
-              inputs,
-              outputs,
-              steps,
-              risks,
-              triggers,
-              guardrails,
-              tests,
-              tags,
-              activeTab,
-            },
-          })
-        )
-        if (markSavedAt) setDraftSavedAt(Date.now())
-      } catch {
-        // ignore localStorage write failure
-      }
     },
-    [
-      isEdit,
-      draftHydrated,
+    [initFromData, setUIField]
+  )
+
+  const buildDraftPayload = useCallback(
+    (): DraftPayload => ({
       title,
       summary,
       inputs,
@@ -198,24 +208,203 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       tests,
       tags,
       activeTab,
-    ]
+    }),
+    [title, summary, inputs, outputs, steps, risks, triggers, guardrails, tests, tags, activeTab]
+  )
+
+  const persistLocalDraft = useCallback(
+    (markSavedAt = true) => {
+      if (typeof window === 'undefined' || !localDraftStorageKey) return
+      try {
+        window.localStorage.setItem(
+          localDraftStorageKey,
+          JSON.stringify({
+            version: draftVersionRef.current || 1,
+            updatedAt: Date.now(),
+            data: buildDraftPayload(),
+          } satisfies DraftEnvelope)
+        )
+        if (!isEdit) {
+          window.localStorage.removeItem(LEGACY_NEW_DRAFT_STORAGE_KEY)
+        }
+        if (markSavedAt) setDraftSavedAt(Date.now())
+      } catch {
+        // ignore local draft write failures
+      }
+    },
+    [localDraftStorageKey, buildDraftPayload, isEdit]
+  )
+
+  const persistServerDraft = useCallback(
+    async (markSavedAt = true, silent = true) => {
+      if (!draftHydrated || !remoteDraftKey) return
+      if (draftSaveInFlightRef.current) {
+        draftSaveQueuedRef.current = true
+        return
+      }
+
+      draftSaveInFlightRef.current = true
+      try {
+        const expectedVersion = draftVersionRef.current
+        const res = await fetch(`/api/skill-drafts/${encodeURIComponent(remoteDraftKey)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode: draftMode,
+            skillId: isEdit ? skillId : null,
+            payload: buildDraftPayload(),
+            expectedVersion: expectedVersion ?? undefined,
+          }),
+        })
+
+        if (res.status === 409) {
+          const latestRes = await fetch(`/api/skill-drafts/${encodeURIComponent(remoteDraftKey)}`)
+          if (latestRes.ok) {
+            const latest = (await latestRes.json().catch(() => ({}))) as RemoteDraftResponse
+            const latestPayload = normalizeDraftPayload(latest.payload)
+            if (latestPayload) {
+              applyDraftPayload(latestPayload)
+              setDraftRestoredAt(Date.now())
+              setDraftSource('server')
+              notify.info('检测到草稿冲突，已同步为最新版本。')
+            }
+            if (typeof latest.version === 'number') {
+              setDraftVersion(latest.version)
+            }
+          }
+          return
+        }
+
+        if (!res.ok) {
+          if (!silent && !serverDraftWarnedRef.current) {
+            notify.info('云端草稿暂不可用，当前改动已保存在本地。')
+            serverDraftWarnedRef.current = true
+          }
+          return
+        }
+
+        const data = (await res.json().catch(() => ({}))) as RemoteDraftResponse
+        if (typeof data.version === 'number') {
+          setDraftVersion(data.version)
+          draftVersionRef.current = data.version
+        }
+        setDraftSource('server')
+        serverDraftWarnedRef.current = false
+        if (markSavedAt) setDraftSavedAt(Date.now())
+      } catch {
+        if (!silent && !serverDraftWarnedRef.current) {
+          notify.info('云端草稿保存失败，当前改动已保存在本地。')
+          serverDraftWarnedRef.current = true
+        }
+      } finally {
+        draftSaveInFlightRef.current = false
+        if (draftSaveQueuedRef.current) {
+          draftSaveQueuedRef.current = false
+          void persistServerDraft(markSavedAt, true)
+        }
+      }
+    },
+    [draftHydrated, remoteDraftKey, draftMode, isEdit, skillId, buildDraftPayload, applyDraftPayload, notify]
   )
 
   useEffect(() => {
-    if (isEdit || !draftHydrated || typeof window === 'undefined') return
+    if (restoredDraftRef.current || typeof window === 'undefined') return
+    if (!draftClientId || !localDraftStorageKey || !remoteDraftKey) return
+    if (isEdit && !initialData) return
+
+    let cancelled = false
+    restoredDraftRef.current = true
+    const hydrate = async () => {
+      try {
+        const remoteRes = await fetch(`/api/skill-drafts/${encodeURIComponent(remoteDraftKey)}`, {
+          cache: 'no-store',
+        })
+        if (remoteRes.ok) {
+          const remote = (await remoteRes.json().catch(() => ({}))) as RemoteDraftResponse
+          const payload = normalizeDraftPayload(remote.payload)
+          if (payload && !cancelled) {
+            applyDraftPayload(payload)
+            setDraftRestoredAt(Date.now())
+            setDraftSource('server')
+            if (typeof remote.version === 'number') {
+              setDraftVersion(remote.version)
+              draftVersionRef.current = remote.version
+            }
+            return
+          }
+        }
+      } catch {
+        // fallback to local draft
+      }
+
+      const applyLocalRaw = (raw: string | null): boolean => {
+        if (!raw) return false
+        try {
+          const parsed = JSON.parse(raw) as DraftEnvelope
+          const payload = normalizeDraftPayload(parsed?.data)
+          if (!payload || cancelled) return false
+          applyDraftPayload(payload)
+          setDraftRestoredAt(Date.now())
+          setDraftSource('local')
+          if (typeof parsed.version === 'number' && parsed.version > 0) {
+            setDraftVersion(parsed.version)
+            draftVersionRef.current = parsed.version
+          }
+          return true
+        } catch {
+          return false
+        }
+      }
+
+      const localRaw = window.localStorage.getItem(localDraftStorageKey)
+      const restoredFromLocal = applyLocalRaw(localRaw)
+      if (restoredFromLocal) return
+
+      if (!isEdit) {
+        const legacyRaw = window.localStorage.getItem(LEGACY_NEW_DRAFT_STORAGE_KEY)
+        const restoredFromLegacy = applyLocalRaw(legacyRaw)
+        if (restoredFromLegacy) {
+          if (legacyRaw) {
+            window.localStorage.setItem(localDraftStorageKey, legacyRaw)
+          }
+          window.localStorage.removeItem(LEGACY_NEW_DRAFT_STORAGE_KEY)
+        }
+      }
+    }
+
+    void hydrate().finally(() => {
+      if (!cancelled) setDraftHydrated(true)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    draftClientId,
+    localDraftStorageKey,
+    remoteDraftKey,
+    isEdit,
+    initialData,
+    applyDraftPayload,
+  ])
+
+  useEffect(() => {
+    if (!draftHydrated || typeof window === 'undefined') return
 
     const timer = window.setTimeout(() => {
       persistLocalDraft(true)
+      void persistServerDraft(true, true)
     }, AUTOSAVE_DEBOUNCE_MS)
 
     return () => window.clearTimeout(timer)
-  }, [isEdit, draftHydrated, persistLocalDraft])
+  }, [draftHydrated, persistLocalDraft, persistServerDraft])
 
   useEffect(() => {
-    if (isEdit || !draftHydrated || typeof window === 'undefined') return
+    if (!draftHydrated || typeof window === 'undefined') return
 
     const flushDraft = () => {
       persistLocalDraft(false)
+      void persistServerDraft(false, true)
     }
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') flushDraft()
@@ -230,7 +419,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       window.removeEventListener('beforeunload', flushDraft)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [isEdit, draftHydrated, persistLocalDraft])
+  }, [draftHydrated, persistLocalDraft, persistServerDraft])
 
   const loadTags = useCallback(async () => {
     try {
@@ -462,6 +651,31 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     triggers: 'triggers', guardrails: 'guardrails', tests: 'tests',
   }
 
+  async function clearPersistedDraft(showNotice = false) {
+    if (typeof window === 'undefined') return
+    if (localDraftStorageKey) {
+      window.localStorage.removeItem(localDraftStorageKey)
+    }
+    if (!isEdit) {
+      window.localStorage.removeItem(LEGACY_NEW_DRAFT_STORAGE_KEY)
+    }
+    if (remoteDraftKey) {
+      try {
+        await fetch(`/api/skill-drafts/${encodeURIComponent(remoteDraftKey)}`, { method: 'DELETE' })
+      } catch {
+        // ignore cloud draft clear failures
+      }
+    }
+    draftVersionRef.current = null
+    setDraftVersion(null)
+    setDraftSource(null)
+    setDraftRestoredAt(null)
+    setDraftSavedAt(null)
+    if (showNotice) {
+      notify.success('草稿已清空')
+    }
+  }
+
   async function handleSave() {
     setUIField('error', '')
     if (requiredStatus.filled < requiredStatus.total) {
@@ -487,9 +701,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       }
       const data = await res.json()
       notify.success(isEdit ? 'Skill 已更新' : 'Skill 已创建')
-      if (!isEdit && typeof window !== 'undefined') {
-        window.localStorage.removeItem(DRAFT_STORAGE_KEY)
-      }
+      await clearPersistedDraft(false)
       router.push(`/skills/${data.id}`)
     } catch {
       const msg = '保存时网络异常，请重试。'
@@ -551,14 +763,14 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     !tags.includes(normalizedTagInput) &&
     !availableTags.includes(normalizedTagInput)
 
-  const draftTip = !isEdit
-    ? draftRestoredAt
-      ? `已恢复本地草稿（${new Date(draftRestoredAt).toLocaleTimeString()}）`
-      : draftHydrated
-        ? '已开启本地自动草稿'
-        : '正在检查本地草稿...'
-    : ''
-  const draftSaveTimeLabel = !isEdit && draftSavedAt ? `最近保存 ${new Date(draftSavedAt).toLocaleTimeString()}` : ''
+  const draftTip = draftRestoredAt
+    ? `已恢复${draftSource === 'server' ? '云端' : '本地'}草稿（${new Date(draftRestoredAt).toLocaleTimeString()}）`
+    : draftHydrated
+      ? draftSource === 'server'
+        ? '已开启云端自动草稿（本地兜底）'
+        : '已开启本地自动草稿（云端同步中）'
+      : '正在检查草稿...'
+  const draftSaveTimeLabel = draftSavedAt ? `最近保存 ${new Date(draftSavedAt).toLocaleTimeString()}` : ''
   const aiCurrentSkill = useMemo(
     () => ({
       title,
@@ -575,11 +787,8 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     [title, summary, inputs, outputs, steps, risks, triggers, guardrails, tests, tags]
   )
 
-  function handleClearLocalDraft() {
-    if (typeof window === 'undefined') return
-    window.localStorage.removeItem(DRAFT_STORAGE_KEY)
-    setDraftRestoredAt(null)
-    setDraftSavedAt(null)
+  async function handleClearLocalDraft() {
+    await clearPersistedDraft(true)
   }
 
   const tabs = [
@@ -723,7 +932,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
                 {requiredStatus.filled}/{requiredStatus.total} {requiredStatus.filled === requiredStatus.total ? '就绪' : '必填'}
               </span>
               <Button
-                onClick={handleClearLocalDraft}
+                onClick={() => void handleClearLocalDraft()}
                 type="button"
                 variant="ghost"
                 size="sm"
