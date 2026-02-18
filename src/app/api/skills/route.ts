@@ -4,6 +4,7 @@ import { createSkillSchema } from '@/lib/zod-schemas'
 import { slugify } from '@/lib/slugify'
 import { buildCreateTagConnect, isServiceError } from '@/lib/tag-service'
 import { normalizeTagNames } from '@/lib/tag-normalize'
+import { createSkillVersionIfAvailable, toSkillSnapshot } from '@/lib/skill-versioning'
 
 export const runtime = 'nodejs'
 
@@ -123,6 +124,7 @@ export async function POST(request: NextRequest) {
       data: {
         title: parsed.title,
         slug,
+        status: 'draft',
         summary: parsed.summary,
         inputs: parsed.inputs,
         outputs: parsed.outputs,
@@ -137,6 +139,7 @@ export async function POST(request: NextRequest) {
         tags: { include: { tag: true } },
       },
     })
+    await createSkillVersionIfAvailable(prisma, skill.id, toSkillSnapshot(skill))
 
     return NextResponse.json(
       { ...skill, tags: skill.tags.map((st) => st.tag.name) },

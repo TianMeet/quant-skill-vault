@@ -11,6 +11,7 @@ model Skill {
   id                      Int       @id @default(autoincrement())
   title                   String    @db.VarChar(200)
   slug                    String    @unique @db.VarChar(64)
+  status                  String    @default("draft") @db.VarChar(20)
   summary                 String    @db.Text
   inputs                  String    @db.Text
   outputs                 String    @db.Text
@@ -22,6 +23,8 @@ model Skill {
   tags                    SkillTag[]
   files                   SkillFile[]
   drafts                  SkillDraft[]
+  versions                SkillVersion[]
+  publications            SkillPublication[]
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @updatedAt @map("updated_at")
   createdBy               String    @default("SYS") @map("created_by") @db.VarChar(150)
@@ -43,6 +46,35 @@ model SkillDraft {
 
   @@index([updatedAt])
   @@map("skill_drafts")
+}
+
+model SkillVersion {
+  id        Int      @id @default(autoincrement())
+  skillId   Int      @map("skill_id")
+  version   Int
+  snapshot  Json
+  skill     Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  publications SkillPublication[]
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([skillId, version])
+  @@index([skillId, createdAt])
+  @@map("skill_versions")
+}
+
+model SkillPublication {
+  id             Int          @id @default(autoincrement())
+  skillId        Int          @map("skill_id")
+  skillVersionId Int          @map("skill_version_id")
+  note           String?      @db.Text
+  skill          Skill        @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  skillVersion   SkillVersion @relation(fields: [skillVersionId], references: [id], onDelete: Cascade)
+  publishedAt    DateTime     @default(now()) @map("published_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@index([skillId, publishedAt])
+  @@map("skill_publications")
 }
 
 model Tag {

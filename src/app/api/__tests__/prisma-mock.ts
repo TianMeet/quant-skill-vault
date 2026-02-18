@@ -9,10 +9,14 @@ const mockSkills: Map<number, Record<string, unknown>> = new Map()
 const mockTags: Map<number, Record<string, unknown>> = new Map()
 const mockFiles: Map<number, Record<string, unknown>> = new Map()
 const mockDrafts: Map<number, Record<string, unknown>> = new Map()
+const mockSkillVersions: Map<number, Record<string, unknown>> = new Map()
+const mockSkillPublications: Map<number, Record<string, unknown>> = new Map()
 let skillIdCounter = 1
 let tagIdCounter = 1
 let fileIdCounter = 1
 let draftIdCounter = 1
+let versionIdCounter = 1
+let publicationIdCounter = 1
 
 function makePrismaError(code: string, message: string) {
   return Object.assign(new Error(message), { code })
@@ -174,10 +178,14 @@ export function resetMockDb() {
   mockTags.clear()
   mockFiles.clear()
   mockDrafts.clear()
+  mockSkillVersions.clear()
+  mockSkillPublications.clear()
   skillIdCounter = 1
   tagIdCounter = 1
   fileIdCounter = 1
   draftIdCounter = 1
+  versionIdCounter = 1
+  publicationIdCounter = 1
   vi.clearAllMocks()
 }
 
@@ -212,6 +220,14 @@ export function getMockFiles() {
 
 export function getMockDrafts() {
   return mockDrafts
+}
+
+export function getMockSkillVersions() {
+  return mockSkillVersions
+}
+
+export function getMockSkillPublications() {
+  return mockSkillPublications
 }
 
 export const prismaMock = {
@@ -274,6 +290,7 @@ export const prismaMock = {
 
       const skill = {
         id,
+        status: 'draft',
         ...rest,
         _tags: [],
         createdAt: new Date(),
@@ -318,6 +335,15 @@ export const prismaMock = {
     }),
 
     delete: vi.fn(async (args: { where: { id: number } }) => {
+      for (const [fid, file] of mockFiles) {
+        if (file.skillId === args.where.id) mockFiles.delete(fid)
+      }
+      for (const [vid, version] of mockSkillVersions) {
+        if (version.skillId === args.where.id) mockSkillVersions.delete(vid)
+      }
+      for (const [pid, publication] of mockSkillPublications) {
+        if (publication.skillId === args.where.id) mockSkillPublications.delete(pid)
+      }
       mockSkills.delete(args.where.id)
       return { id: args.where.id }
     }),
@@ -607,12 +633,200 @@ export const prismaMock = {
     }),
   },
 
+  skillVersion: {
+    findMany: vi.fn(async (args?: {
+      where?: Record<string, unknown>
+      orderBy?: Record<string, string>
+      skip?: number
+      take?: number
+      include?: Record<string, unknown>
+      select?: Record<string, boolean>
+    }) => {
+      let results = Array.from(mockSkillVersions.values())
+
+      if (args?.where?.skillId) {
+        results = results.filter((item) => item.skillId === args.where?.skillId)
+      }
+
+      if (args?.orderBy?.version) {
+        const direction = args.orderBy.version
+        results = results.sort((a, b) =>
+          direction === 'desc'
+            ? Number(b.version) - Number(a.version)
+            : Number(a.version) - Number(b.version)
+        )
+      } else if (args?.orderBy?.createdAt) {
+        const direction = args.orderBy.createdAt
+        results = results.sort((a, b) => {
+          const ta = new Date(String(a.createdAt)).getTime()
+          const tb = new Date(String(b.createdAt)).getTime()
+          return direction === 'desc' ? tb - ta : ta - tb
+        })
+      }
+
+      if (typeof args?.skip === 'number' || typeof args?.take === 'number') {
+        const start = typeof args?.skip === 'number' ? args.skip : 0
+        const end = typeof args?.take === 'number' ? start + args.take : undefined
+        results = results.slice(start, end)
+      }
+
+      const mapped = results.map((item) => ({ ...item }))
+
+      if (args?.select) {
+        return mapped.map((item) => {
+          const out: Record<string, unknown> = {}
+          for (const [key, enabled] of Object.entries(args.select || {})) {
+            if (enabled) out[key] = item[key]
+          }
+          return out
+        })
+      }
+
+      return mapped
+    }),
+
+    findUnique: vi.fn(async (args: { where: { id?: number; skillId_version?: { skillId: number; version: number } } }) => {
+      if (args.where.id) {
+        return mockSkillVersions.get(args.where.id) || null
+      }
+      if (args.where.skillId_version) {
+        for (const [, item] of mockSkillVersions) {
+          if (
+            item.skillId === args.where.skillId_version.skillId &&
+            item.version === args.where.skillId_version.version
+          ) {
+            return { ...item }
+          }
+        }
+      }
+      return null
+    }),
+
+    findFirst: vi.fn(async (args?: {
+      where?: Record<string, unknown>
+      orderBy?: Record<string, string>
+      select?: Record<string, boolean>
+    }) => {
+      const rows = await prismaMock.skillVersion.findMany({
+        where: args?.where,
+        orderBy: args?.orderBy,
+      })
+      const first = rows[0] || null
+      if (!first) return null
+      if (args?.select) {
+        const out: Record<string, unknown> = {}
+        for (const [key, enabled] of Object.entries(args.select || {})) {
+          if (enabled) out[key] = first[key]
+        }
+        return out
+      }
+      return first
+    }),
+
+    create: vi.fn(async (args: { data: Record<string, unknown> }) => {
+      for (const [, existing] of mockSkillVersions) {
+        if (
+          existing.skillId === args.data.skillId &&
+          existing.version === args.data.version
+        ) {
+          throw makePrismaError('P2002', 'Unique constraint failed on skillId_version')
+        }
+      }
+      const id = versionIdCounter++
+      const now = new Date()
+      const row = {
+        id,
+        createdAt: now,
+        ...args.data,
+      }
+      mockSkillVersions.set(id, row)
+      return { ...row }
+    }),
+
+    count: vi.fn(async (args?: { where?: Record<string, unknown> }) => {
+      let results = Array.from(mockSkillVersions.values())
+      if (args?.where?.skillId) {
+        results = results.filter((item) => item.skillId === args.where?.skillId)
+      }
+      return results.length
+    }),
+  },
+
+  skillPublication: {
+    findMany: vi.fn(async (args?: {
+      where?: Record<string, unknown>
+      orderBy?: Record<string, string>
+      include?: Record<string, unknown>
+      take?: number
+    }) => {
+      let results = Array.from(mockSkillPublications.values())
+
+      if (args?.where?.skillId) {
+        results = results.filter((item) => item.skillId === args.where?.skillId)
+      }
+
+      if (args?.orderBy?.publishedAt) {
+        const direction = args.orderBy.publishedAt
+        results = results.sort((a, b) => {
+          const ta = new Date(String(a.publishedAt)).getTime()
+          const tb = new Date(String(b.publishedAt)).getTime()
+          return direction === 'desc' ? tb - ta : ta - tb
+        })
+      }
+
+      if (typeof args?.take === 'number') {
+        results = results.slice(0, args.take)
+      }
+
+      return results.map((item) => {
+        const base: Record<string, unknown> = { ...item }
+        if (args?.include?.skillVersion) {
+          const version = mockSkillVersions.get(Number(item.skillVersionId))
+          base.skillVersion = version
+            ? { id: version.id, version: version.version }
+            : null
+        }
+        return base
+      })
+    }),
+
+    create: vi.fn(async (args: { data: Record<string, unknown> }) => {
+      const skillId = Number(args.data.skillId)
+      const versionId = Number(args.data.skillVersionId)
+      if (!mockSkills.get(skillId) || !mockSkillVersions.get(versionId)) {
+        throw makePrismaError('P2025', 'Related record not found')
+      }
+      const id = publicationIdCounter++
+      const now = new Date()
+      const row = {
+        id,
+        skillId,
+        skillVersionId: versionId,
+        note: args.data.note ?? null,
+        publishedAt: new Date(),
+        createdAt: now,
+        updatedAt: now,
+      }
+      mockSkillPublications.set(id, row)
+      return { ...row }
+    }),
+  },
+
   $transaction: vi.fn(async (fn: (tx: typeof prismaMock) => Promise<unknown>) => {
     const skillSnap = cloneMap(mockSkills)
     const tagSnap = cloneMap(mockTags)
     const fileSnap = cloneMap(mockFiles)
     const draftSnap = cloneMap(mockDrafts)
-    const counters = { skillIdCounter, tagIdCounter, fileIdCounter, draftIdCounter }
+    const versionSnap = cloneMap(mockSkillVersions)
+    const publicationSnap = cloneMap(mockSkillPublications)
+    const counters = {
+      skillIdCounter,
+      tagIdCounter,
+      fileIdCounter,
+      draftIdCounter,
+      versionIdCounter,
+      publicationIdCounter,
+    }
 
     try {
       return await fn(prismaMock as unknown as typeof prismaMock)
@@ -621,10 +835,14 @@ export const prismaMock = {
       restoreMap(mockTags, tagSnap)
       restoreMap(mockFiles, fileSnap)
       restoreMap(mockDrafts, draftSnap)
+      restoreMap(mockSkillVersions, versionSnap)
+      restoreMap(mockSkillPublications, publicationSnap)
       skillIdCounter = counters.skillIdCounter
       tagIdCounter = counters.tagIdCounter
       fileIdCounter = counters.fileIdCounter
       draftIdCounter = counters.draftIdCounter
+      versionIdCounter = counters.versionIdCounter
+      publicationIdCounter = counters.publicationIdCounter
       throw err
     }
   }),

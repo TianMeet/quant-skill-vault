@@ -21,6 +21,7 @@ export interface SkillData {
   id?: number
   title: string
   slug?: string
+  status?: 'draft' | 'published' | 'archived' | string
   summary: string
   inputs: string
   outputs: string

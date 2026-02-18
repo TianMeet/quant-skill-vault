@@ -3,7 +3,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Download, Edit, Trash2, CheckCircle, File, ChevronLeft, Shield, Zap, FlaskConical, Copy, AlertCircle } from 'lucide-react'
+import { Download, Edit, Trash2, CheckCircle, File, ChevronLeft, Shield, Zap, FlaskConical, Copy, AlertCircle, History, UploadCloud } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { SkillGuardrails, SkillTestCase } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -15,6 +17,7 @@ interface SkillDetail {
   id: number
   title: string
   slug: string
+  status: string
   summary: string
   inputs: string
   outputs: string
@@ -41,6 +44,34 @@ interface LintError {
   message: string
 }
 
+interface SkillVersionItem {
+  id: number
+  version: number
+  title: string | null
+  status: string | null
+  createdAt: string
+}
+
+interface SkillPublicationItem {
+  id: number
+  versionId: number
+  version: number
+  note: string | null
+  publishedAt: string
+}
+
+function MarkdownBlock({ content }: { content: string }) {
+  const value = content?.trim() || ''
+  if (!value) return <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>暂无内容</p>
+  return (
+    <div className="chat-markdown text-sm leading-relaxed">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        {value}
+      </ReactMarkdown>
+    </div>
+  )
+}
+
 export default function SkillDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -53,7 +84,12 @@ export default function SkillDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
+  const [publishing, setPublishing] = useState(false)
+  const [rollingVersionId, setRollingVersionId] = useState<number | null>(null)
   const [files, setFiles] = useState<SkillFileItem[]>([])
+  const [versions, setVersions] = useState<SkillVersionItem[]>([])
+  const [versionLoading, setVersionLoading] = useState(false)
+  const [publications, setPublications] = useState<SkillPublicationItem[]>([])
   const friendlyLintIssues = useMemo(() => toFriendlyLintIssues(lintErrors), [lintErrors])
 
   const fetchSkill = useCallback(async () => {
@@ -88,10 +124,51 @@ export default function SkillDetailPage() {
     }
   }, [skillId])
 
+  const fetchVersions = useCallback(async () => {
+    if (!skillId) return
+    setVersionLoading(true)
+    try {
+      const res = await fetch(`/api/skills/${skillId}/versions?limit=20`)
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        notify.error(toUserFriendlyErrorMessage(data.error || `加载版本失败（${res.status}）`))
+        setVersions([])
+        return
+      }
+      const data = await res.json().catch(() => ({}))
+      setVersions(Array.isArray(data.items) ? data.items : [])
+    } catch {
+      notify.error('加载版本失败，请稍后重试。')
+      setVersions([])
+    } finally {
+      setVersionLoading(false)
+    }
+  }, [skillId, notify])
+
+  const fetchPublications = useCallback(async () => {
+    if (!skillId) return
+    try {
+      const res = await fetch(`/api/skills/${skillId}/publications`)
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        notify.error(toUserFriendlyErrorMessage(data.error || `加载发布记录失败（${res.status}）`))
+        setPublications([])
+        return
+      }
+      const data = await res.json().catch(() => ({}))
+      setPublications(Array.isArray(data.items) ? data.items : [])
+    } catch {
+      notify.error('加载发布记录失败，请稍后重试。')
+      setPublications([])
+    }
+  }, [skillId, notify])
+
   useEffect(() => {
     void fetchSkill()
     void fetchFiles()
-  }, [fetchSkill, fetchFiles])
+    void fetchVersions()
+    void fetchPublications()
+  }, [fetchSkill, fetchFiles, fetchVersions, fetchPublications])
 
   async function handleDelete() {
     setDeleteDialogOpen(true)
@@ -138,6 +215,54 @@ export default function SkillDetailPage() {
       notify.error(msg)
     } finally {
       setDuplicating(false)
+    }
+  }
+
+  async function handlePublish() {
+    if (!skillId) return
+    setPublishing(true)
+    try {
+      const res = await fetch(`/api/skills/${skillId}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        const msg = toUserFriendlyErrorMessage(data.error || `发布失败（${res.status}）`)
+        notify.error(msg)
+        return
+      }
+      notify.success('Skill 已发布')
+      await Promise.all([fetchSkill(), fetchVersions(), fetchPublications()])
+    } catch {
+      notify.error('发布失败，请稍后重试。')
+    } finally {
+      setPublishing(false)
+    }
+  }
+
+  async function handleRollback(versionId: number) {
+    if (!skillId) return
+    setRollingVersionId(versionId)
+    try {
+      const res = await fetch(`/api/skills/${skillId}/rollback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ versionId }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        const msg = toUserFriendlyErrorMessage(data.error || `回滚失败（${res.status}）`)
+        notify.error(msg)
+        return
+      }
+      notify.success(`已回滚到版本 v${versions.find((item) => item.id === versionId)?.version || versionId}`)
+      await Promise.all([fetchSkill(), fetchVersions(), fetchPublications()])
+    } catch {
+      notify.error('回滚失败，请稍后重试。')
+    } finally {
+      setRollingVersionId(null)
     }
   }
 
@@ -217,7 +342,15 @@ export default function SkillDetailPage() {
       <div className="mb-8 flex items-start justify-between">
         <div className="flex-1">
           <h1 className="text-2xl font-semibold tracking-tight">{skill.title}</h1>
-          <p className="mt-1 text-sm font-mono" style={{ color: 'var(--muted-foreground)' }}>{skill.slug}</p>
+          <div className="mt-1 flex items-center gap-2">
+            <p className="text-sm font-mono" style={{ color: 'var(--muted-foreground)' }}>{skill.slug}</p>
+            <Badge
+              variant={skill.status === 'published' ? 'default' : 'secondary'}
+              className="rounded-md px-2 py-0.5 text-[10px] uppercase tracking-wide"
+            >
+              {skill.status === 'published' ? 'PUBLISHED' : 'DRAFT'}
+            </Badge>
+          </div>
           {skill.tags.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1.5">
               {skill.tags.map((tag) => (
@@ -247,6 +380,13 @@ export default function SkillDetailPage() {
             <Copy className="h-3.5 w-3.5" /> {duplicating ? '复制中...' : '复制'}
           </Button>
           <Button
+            onClick={handlePublish}
+            disabled={publishing}
+            className="rounded-lg"
+          >
+            <UploadCloud className="h-3.5 w-3.5" /> {publishing ? '发布中...' : '发布'}
+          </Button>
+          <Button
             onClick={handleDelete}
             disabled={deleting}
             variant="destructive"
@@ -264,7 +404,7 @@ export default function SkillDetailPage() {
           <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--muted-foreground)' }}>
             用途
           </h2>
-          <p className="text-sm leading-relaxed">{skill.summary}</p>
+          <MarkdownBlock content={skill.summary} />
         </section>
 
         {/* Inputs & Outputs */}
@@ -273,13 +413,13 @@ export default function SkillDetailPage() {
             <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--muted-foreground)' }}>
               输入
             </h2>
-            <p className="text-sm whitespace-pre-wrap leading-relaxed">{skill.inputs}</p>
+            <MarkdownBlock content={skill.inputs} />
           </section>
           <section className="card p-5">
             <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--muted-foreground)' }}>
               输出
             </h2>
-            <p className="text-sm whitespace-pre-wrap leading-relaxed">{skill.outputs}</p>
+            <MarkdownBlock content={skill.outputs} />
           </section>
         </div>
 
@@ -309,7 +449,7 @@ export default function SkillDetailPage() {
             <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--muted-foreground)' }}>
               风险
             </h2>
-            <p className="text-sm whitespace-pre-wrap leading-relaxed">{skill.risks}</p>
+            <MarkdownBlock content={skill.risks} />
           </section>
         )}
 
@@ -429,6 +569,75 @@ export default function SkillDetailPage() {
             </div>
           </section>
         )}
+
+        {/* Version History */}
+        <section className="card p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <History className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+              <h2 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--muted-foreground)' }}>
+                版本历史
+              </h2>
+            </div>
+            <Button onClick={() => void fetchVersions()} variant="ghost" size="sm" className="h-7 rounded-md px-2 text-xs">
+              刷新
+            </Button>
+          </div>
+          {versionLoading ? (
+            <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>版本加载中...</p>
+          ) : versions.length === 0 ? (
+            <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>暂无版本记录</p>
+          ) : (
+            <div className="space-y-2">
+              {versions.map((version) => (
+                <div key={version.id} className="flex items-center justify-between rounded-lg p-2.5" style={{ background: 'var(--muted)' }}>
+                  <div>
+                    <p className="text-sm font-medium">v{version.version} · {version.title || '未命名版本'}</p>
+                    <p className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                      {new Date(version.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 rounded-md px-2 text-xs"
+                    onClick={() => void handleRollback(version.id)}
+                    disabled={rollingVersionId === version.id}
+                  >
+                    {rollingVersionId === version.id ? '回滚中...' : '回滚到此版本'}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Publication History */}
+        <section className="card p-5">
+          <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--muted-foreground)' }}>
+            发布记录
+          </h2>
+          {publications.length === 0 ? (
+            <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>暂无发布记录</p>
+          ) : (
+            <div className="space-y-2">
+              {publications.map((item) => (
+                <div key={item.id} className="rounded-lg p-2.5" style={{ background: 'var(--muted)' }}>
+                  <p className="text-sm font-medium">版本 v{item.version}</p>
+                  <p className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                    发布于 {new Date(item.publishedAt).toLocaleString()}
+                  </p>
+                  {item.note && (
+                    <p className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                      备注：{item.note}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
 
         {/* Export Section */}
         <section className="card p-5">

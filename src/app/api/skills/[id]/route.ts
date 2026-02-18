@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { updateSkillSchema } from '@/lib/zod-schemas'
 import { slugify } from '@/lib/slugify'
 import { buildReplaceTagConnect, isServiceError } from '@/lib/tag-service'
+import { createSkillVersionIfAvailable, toSkillSnapshot } from '@/lib/skill-versioning'
 
 export const runtime = 'nodejs'
 
@@ -91,6 +92,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       },
       include: { tags: { include: { tag: true } } },
     })
+    await createSkillVersionIfAvailable(prisma, skill.id, toSkillSnapshot(skill))
 
     return NextResponse.json({
       ...skill,

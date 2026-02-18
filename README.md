@@ -34,6 +34,14 @@ pnpm db:push
 pnpm db:seed
 ```
 
+如果你使用本地 MySQL（非 Docker），请使用：
+
+```bash
+pnpm db:generate:local
+pnpm db:push:local
+pnpm db:seed
+```
+
 ### 4. 启动开发服务器
 
 ```bash
@@ -243,6 +251,11 @@ cp .env.example .env
 | `pnpm dev` | 启动开发服务器 |
 | `pnpm db:up` | 启动 MySQL (Docker) |
 | `pnpm db:push` | 推送 schema 到数据库 |
+| `pnpm db:generate:local` | 使用 `.env.local` 生成 Prisma Client |
+| `pnpm db:push:local` | 使用 `.env.local` 推送 schema 到本地数据库 |
+| `pnpm db:migrate:local:create -- <name>` | 生成本地迁移文件（不立即执行） |
+| `pnpm db:migrate:local:apply` | 执行本地迁移 |
+| `pnpm db:check:migration` | 校验 schema 变更是否包含 migrations 变更 |
 | `pnpm db:seed` | 填充示例数据 |
 | `pnpm test` | 运行全部测试 |
 | `pnpm test:unit` | 运行单元测试 |

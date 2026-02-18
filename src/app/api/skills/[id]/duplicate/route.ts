@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { slugify } from '@/lib/slugify'
 import { buildCreateTagConnect, isServiceError } from '@/lib/tag-service'
+import { createSkillVersionIfAvailable, toSkillSnapshot } from '@/lib/skill-versioning'
 
 export const runtime = 'nodejs'
 
@@ -80,6 +81,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         data: {
           title: nextTitle,
           slug: nextSlug,
+          status: 'draft',
           summary: source.summary,
           inputs: source.inputs,
           outputs: source.outputs,
@@ -90,6 +92,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           tests: source.tests,
           tags: tagConnect,
         },
+        include: { tags: { include: { tag: true } } },
       })
 
       for (const file of sourceFiles) {
@@ -107,6 +110,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
       return skill
     })
+    await createSkillVersionIfAvailable(prisma, duplicated.id, toSkillSnapshot(duplicated))
 
     const copied = await prisma.skill.findUnique({
       where: { id: duplicated.id },

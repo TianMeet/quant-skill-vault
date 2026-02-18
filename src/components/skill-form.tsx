@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import type { SkillData } from '@/lib/types'
 import { useSkillStore } from '@/lib/stores/skill-store'
 import { Button } from '@/components/ui/button'
@@ -939,6 +940,15 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
                 className={`${roundedLgClass} h-6 px-2 text-[10px]`}
               >
                 清空草稿
+              </Button>
+              <Button
+                asChild
+                type="button"
+                variant="ghost"
+                size="sm"
+                className={`${roundedLgClass} h-6 px-2 text-[10px]`}
+              >
+                <Link href="/drafts">草稿管理</Link>
               </Button>
             </div>
           )}

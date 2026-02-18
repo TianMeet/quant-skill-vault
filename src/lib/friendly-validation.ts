@@ -226,11 +226,26 @@ export function toUserFriendlyErrorMessage(raw: unknown): string {
   if (message === 'Skill not found') {
     return '未找到当前 Skill，可能已被删除。'
   }
+  if (message === 'Version not found') {
+    return '目标版本不存在，可能已被删除。'
+  }
+  if (message === 'Version snapshot is invalid') {
+    return '该版本快照异常，暂时无法恢复。'
+  }
   if (message === 'Invalid skill id') {
     return '链接中的 Skill 标识无效，请返回列表后重试。'
   }
+  if (message === 'Invalid version id') {
+    return '版本标识无效，请刷新后重试。'
+  }
   if (message === 'Invalid JSON body') {
     return '请求格式不正确，请刷新页面后重试。'
+  }
+  if (message === 'Publish note is too long') {
+    return '发布备注过长，请控制在 2000 字符以内。'
+  }
+  if (message.startsWith('Versioning is not initialized.')) {
+    return '版本功能尚未初始化，请执行数据库同步后重启服务。'
   }
   if (message === 'Tag not found') {
     return '标签不存在，可能已被删除。'
