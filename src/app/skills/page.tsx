@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useNotify } from '@/components/ui/notify-provider'
 import { TagCountPill, TagPill } from '@/components/tag-pill'
 import { toFriendlyLintSummary, toUserFriendlyErrorMessage } from '@/lib/friendly-validation'
+import { guardedFetch } from '@/lib/guarded-fetch'
 import { normalizeTagNames } from '@/lib/tag-normalize'
 
 interface Skill {
@@ -82,7 +83,7 @@ export default function SkillsListPage() {
 
   const fetchTags = useCallback(async () => {
     try {
-      const res = await fetch('/api/tags')
+      const res = await guardedFetch('/api/tags')
       if (res.ok) {
         const data = await res.json().catch(() => ({}))
         const items = Array.isArray(data) ? data : Array.isArray(data.items) ? data.items : []
@@ -104,7 +105,7 @@ export default function SkillsListPage() {
     params.set('limit', String(limit))
     params.set('sort', sort)
     try {
-      const res = await fetch(`/api/skills?${params}`, { signal })
+      const res = await guardedFetch(`/api/skills?${params}`, { signal }, { throttleMs: 0 })
       if (res.ok) {
         const data = await res.json().catch(() => ({}))
         if (Array.isArray(data)) {
@@ -228,7 +229,7 @@ export default function SkillsListPage() {
     if (selectedSkillIds.length === 0) return
     setBatchLoading(true)
     try {
-      const res = await fetch('/api/skills/batch', {
+      const res = await guardedFetch('/api/skills/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -287,7 +288,7 @@ export default function SkillsListPage() {
   async function handleExportZip(e: React.MouseEvent, id: number, slug: string) {
     e.preventDefault()
     e.stopPropagation()
-    const res = await fetch(`/api/skills/${id}/export.zip`)
+    const res = await guardedFetch(`/api/skills/${id}/export.zip`)
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
       const details =

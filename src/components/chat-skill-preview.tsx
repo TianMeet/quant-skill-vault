@@ -3,12 +3,12 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, Check, ChevronDown, ChevronUp, ExternalLink, Loader2 } from 'lucide-react'
-import type { ToolCallData } from '@/lib/chat/types'
+import type { SkillToolCallData } from '@/lib/chat/types'
 import { Button } from '@/components/ui/button'
 import { toUserFriendlyErrorMessage } from '@/lib/friendly-validation'
 
 interface Props {
-  toolCall: ToolCallData
+  toolCall: SkillToolCallData
   onConfirm: () => Promise<{ id: number } | null>
   onEdit?: () => void
   created?: { success: boolean; skillId?: number }

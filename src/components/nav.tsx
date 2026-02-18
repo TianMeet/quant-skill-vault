@@ -82,7 +82,7 @@ export function Nav() {
             </Button>
           ) : (
             <Button asChild className="rounded-lg px-3.5">
-              <Link href="/skills/new">
+              <Link href="/skills/new?fresh=1">
                 <Plus className="h-3.5 w-3.5" />
                 新建 Skill
               </Link>

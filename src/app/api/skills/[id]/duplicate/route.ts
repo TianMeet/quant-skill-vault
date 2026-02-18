@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { slugify } from '@/lib/slugify'
 import { buildCreateTagConnect, isServiceError } from '@/lib/tag-service'
@@ -37,6 +38,10 @@ async function generateUniqueSlug(rawTitle: string, fallbackSlug: string): Promi
   }
 
   return null
+}
+
+function toInputJson(value: Prisma.JsonValue): Prisma.InputJsonValue {
+  return (value === null ? Prisma.JsonNull : value) as Prisma.InputJsonValue
 }
 
 /**
@@ -85,11 +90,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           summary: source.summary,
           inputs: source.inputs,
           outputs: source.outputs,
-          steps: source.steps,
+          steps: toInputJson(source.steps),
           risks: source.risks,
-          triggers: source.triggers,
-          guardrails: source.guardrails,
-          tests: source.tests,
+          triggers: toInputJson(source.triggers),
+          guardrails: toInputJson(source.guardrails),
+          tests: toInputJson(source.tests),
           tags: tagConnect,
         },
         include: { tags: { include: { tag: true } } },
@@ -110,12 +115,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
       return skill
     })
-    await createSkillVersionIfAvailable(prisma, duplicated.id, toSkillSnapshot(duplicated))
 
     const copied = await prisma.skill.findUnique({
       where: { id: duplicated.id },
       include: { tags: { include: { tag: true } } },
     })
+    if (copied) {
+      await createSkillVersionIfAvailable(prisma, copied.id, toSkillSnapshot(copied))
+    }
 
     return NextResponse.json({
       ...copied,

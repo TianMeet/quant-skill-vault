@@ -6,7 +6,7 @@ import { useChat } from '@/lib/chat/use-chat'
 import { useSkillStore } from '@/lib/stores/skill-store'
 import { ChatMessage, StreamingMessage } from './chat-message'
 import { ChatSkillPreview } from './chat-skill-preview'
-import type { SkillDraft } from '@/lib/chat/types'
+import { isSkillToolCallData, type SkillDraft } from '@/lib/chat/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -269,7 +269,7 @@ export function ConsolePanel() {
           {messages.map((msg) => (
             <div key={msg.id} className="space-y-2">
               {msg.content && <ChatMessage message={msg} />}
-              {msg.toolCall && (
+              {isSkillToolCallData(msg.toolCall) && (
                 <ChatSkillPreview
                   toolCall={msg.toolCall}
                   onConfirm={createSkill}

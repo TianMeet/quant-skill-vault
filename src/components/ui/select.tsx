@@ -6,7 +6,25 @@ import { ChevronDown, ChevronUp, Check } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
-const Select = SelectPrimitive.Root
+type SelectProps = React.ComponentPropsWithoutRef<typeof SelectPrimitive.Root> & {
+  throttleMs?: number
+}
+
+const Select = ({ onValueChange, throttleMs = 280, ...props }: SelectProps) => {
+  const lastTriggerAtRef = React.useRef(0)
+  const handleValueChange = React.useCallback(
+    (value: string) => {
+      if (!onValueChange) return
+      const now = Date.now()
+      if (throttleMs > 0 && now - lastTriggerAtRef.current < throttleMs) return
+      lastTriggerAtRef.current = now
+      onValueChange(value)
+    },
+    [onValueChange, throttleMs]
+  )
+
+  return <SelectPrimitive.Root onValueChange={handleValueChange} {...props} />
+}
 
 const SelectGroup = SelectPrimitive.Group
 

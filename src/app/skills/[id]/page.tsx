@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useNotify } from '@/components/ui/notify-provider'
 import { TagPill } from '@/components/tag-pill'
 import { toFriendlyLintIssues, toUserFriendlyErrorMessage } from '@/lib/friendly-validation'
+import { guardedFetch } from '@/lib/guarded-fetch'
 import { FilePreviewContent } from '@/components/file-preview-content'
 
 interface SkillDetail {
@@ -125,7 +126,7 @@ export default function SkillDetailPage() {
     if (!skillId) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/skills/${skillId}`)
+      const res = await guardedFetch(`/api/skills/${skillId}`)
       if (res.ok) {
         setSkill(await res.json())
       } else {
@@ -146,7 +147,7 @@ export default function SkillDetailPage() {
   const fetchFiles = useCallback(async () => {
     if (!skillId) return
     try {
-      const res = await fetch(`/api/skills/${skillId}/files`)
+      const res = await guardedFetch(`/api/skills/${skillId}/files`)
       if (res.ok) setFiles(await res.json())
     } catch {
       setFiles([])
@@ -157,7 +158,7 @@ export default function SkillDetailPage() {
     if (!skillId) return
     setVersionLoading(true)
     try {
-      const res = await fetch(`/api/skills/${skillId}/versions?limit=20`)
+      const res = await guardedFetch(`/api/skills/${skillId}/versions?limit=20`)
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         notify.error(toUserFriendlyErrorMessage(data.error || `加载版本失败（${res.status}）`))
@@ -177,7 +178,7 @@ export default function SkillDetailPage() {
   const fetchPublications = useCallback(async () => {
     if (!skillId) return
     try {
-      const res = await fetch(`/api/skills/${skillId}/publications`)
+      const res = await guardedFetch(`/api/skills/${skillId}/publications`)
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         notify.error(toUserFriendlyErrorMessage(data.error || `加载发布记录失败（${res.status}）`))
@@ -207,7 +208,7 @@ export default function SkillDetailPage() {
     if (!skillId) return
     setDeleting(true)
     try {
-      const res = await fetch(`/api/skills/${skillId}`, { method: 'DELETE' })
+      const res = await guardedFetch(`/api/skills/${skillId}`, { method: 'DELETE' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         const msg = toUserFriendlyErrorMessage(data.error || `删除失败（${res.status}）`)
@@ -229,7 +230,7 @@ export default function SkillDetailPage() {
     if (!skillId) return
     setDuplicating(true)
     try {
-      const res = await fetch(`/api/skills/${skillId}/duplicate`, { method: 'POST' })
+      const res = await guardedFetch(`/api/skills/${skillId}/duplicate`, { method: 'POST' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         const msg = toUserFriendlyErrorMessage(data.error || `复制失败（${res.status}）`)
@@ -251,7 +252,7 @@ export default function SkillDetailPage() {
     if (!skillId) return
     setPublishing(true)
     try {
-      const res = await fetch(`/api/skills/${skillId}/publish`, {
+      const res = await guardedFetch(`/api/skills/${skillId}/publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
@@ -275,7 +276,7 @@ export default function SkillDetailPage() {
     if (!skillId) return
     setRollingVersionId(versionId)
     try {
-      const res = await fetch(`/api/skills/${skillId}/rollback`, {
+      const res = await guardedFetch(`/api/skills/${skillId}/rollback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ versionId }),
@@ -299,7 +300,7 @@ export default function SkillDetailPage() {
     setLintErrors([])
     setLintPassed(false)
     try {
-      const res = await fetch('/api/lint', {
+      const res = await guardedFetch('/api/lint', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(skill),
@@ -348,7 +349,7 @@ export default function SkillDetailPage() {
     }
 
     try {
-      const res = await fetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(file.path)}`)
+      const res = await guardedFetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(file.path)}`)
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         notify.error(toUserFriendlyErrorMessage(data.error || `加载文件失败（${res.status}）`))
@@ -752,14 +753,16 @@ export default function SkillDetailPage() {
                 <div key={f.path} className="flex items-center justify-between rounded-lg p-2.5 transition-colors" style={{ background: 'var(--muted)' }}>
                   <div className="flex items-center gap-2.5">
                     <File className="h-4 w-4" style={{ color: 'var(--muted-foreground)' }} />
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="sm"
                       onClick={() => void handlePreviewFile(f)}
-                      className="text-left text-sm font-mono hover:opacity-70 transition-opacity"
+                      className="h-auto px-0 py-0 text-left text-sm font-mono hover:opacity-70"
                       style={{ color: 'var(--accent)' }}
                     >
                       {f.path}
-                    </button>
+                    </Button>
                   </div>
                   <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{f.mime}</span>
                 </div>

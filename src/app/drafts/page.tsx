@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useNotify } from '@/components/ui/notify-provider'
 import { toUserFriendlyErrorMessage } from '@/lib/friendly-validation'
+import { guardedFetch } from '@/lib/guarded-fetch'
 
 type DraftMode = 'new' | 'edit'
 
@@ -22,9 +23,9 @@ interface DraftItem {
 
 function getDraftContinueUrl(item: DraftItem): string {
   if (item.mode === 'edit' && item.skillId) {
-    return `/skills/${item.skillId}/edit`
+    return `/skills/${item.skillId}/edit?draftKey=${encodeURIComponent(item.key)}`
   }
-  return '/skills/new'
+  return `/skills/new?draftKey=${encodeURIComponent(item.key)}`
 }
 
 export default function DraftsPage() {
@@ -39,7 +40,7 @@ export default function DraftsPage() {
     setLoading(true)
     try {
       const query = mode === 'all' ? '' : `?mode=${mode}`
-      const res = await fetch(`/api/skill-drafts${query}`)
+      const res = await guardedFetch(`/api/skill-drafts${query}`)
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         notify.error(toUserFriendlyErrorMessage(data.error || `加载草稿失败（${res.status}）`))
@@ -69,7 +70,7 @@ export default function DraftsPage() {
     if (!pendingDeleteKey) return
     setDeleting(true)
     try {
-      const res = await fetch(`/api/skill-drafts/${encodeURIComponent(pendingDeleteKey)}`, { method: 'DELETE' })
+      const res = await guardedFetch(`/api/skill-drafts/${encodeURIComponent(pendingDeleteKey)}`, { method: 'DELETE' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         notify.error(toUserFriendlyErrorMessage(data.error || `删除草稿失败（${res.status}）`))

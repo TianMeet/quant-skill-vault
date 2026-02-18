@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 
 export const runtime = 'nodejs'
@@ -8,7 +9,7 @@ type RouteParams = { params: Promise<{ key: string }> }
 type DraftPutBody = {
   mode?: string
   skillId?: number | null
-  payload?: Record<string, unknown>
+  payload?: Prisma.InputJsonObject
   expectedVersion?: number
 }
 
@@ -88,6 +89,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   if (!body.payload || typeof body.payload !== 'object' || Array.isArray(body.payload)) {
     return NextResponse.json({ error: 'payload must be an object' }, { status: 400 })
   }
+  const payload = body.payload as Prisma.InputJsonObject
 
   const expectedVersion =
     body.expectedVersion === undefined || body.expectedVersion === null
@@ -117,7 +119,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         data: {
           mode,
           skillId,
-          payload: body.payload,
+          payload,
           version: existing.version + 1,
         },
       })
@@ -126,7 +128,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           draftKey: key,
           mode,
           skillId,
-          payload: body.payload,
+          payload,
           version: 1,
         },
       })

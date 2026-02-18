@@ -38,15 +38,82 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
+  throttleMs?: number
+  debounceMs?: number
+  preventWhilePending?: boolean
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  (
+    {
+      className,
+      variant,
+      size,
+      asChild = false,
+      throttleMs = 420,
+      debounceMs = 80,
+      preventWhilePending = true,
+      onClick,
+      ...props
+    },
+    ref
+  ) => {
     const Comp = asChild ? Slot : 'button'
+    const lastTriggerAtRef = React.useRef(0)
+    const pendingRef = React.useRef(false)
+    const debounceTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    React.useEffect(
+      () => () => {
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current)
+          debounceTimerRef.current = null
+        }
+      },
+      []
+    )
+
+    const handleClick = React.useCallback<React.MouseEventHandler<HTMLButtonElement>>(
+      (event) => {
+        if (!onClick || props.disabled) return
+
+        if (preventWhilePending && pendingRef.current) return
+
+        const trigger = () => {
+          const now = Date.now()
+          if (throttleMs > 0 && now - lastTriggerAtRef.current < throttleMs) return
+          lastTriggerAtRef.current = now
+
+          const maybePromise = onClick(event) as unknown
+          if (!maybePromise || typeof (maybePromise as { then?: unknown }).then !== 'function') return
+
+          pendingRef.current = true
+          void Promise.resolve(maybePromise)
+            .catch(() => undefined)
+            .finally(() => {
+              pendingRef.current = false
+            })
+        }
+
+        if (debounceMs > 0) {
+          if (typeof (event as unknown as { persist?: () => void }).persist === 'function') {
+            ;(event as unknown as { persist: () => void }).persist()
+          }
+          if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+          debounceTimerRef.current = setTimeout(trigger, debounceMs)
+          return
+        }
+
+        trigger()
+      },
+      [onClick, props.disabled, preventWhilePending, throttleMs, debounceMs]
+    )
+
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
+        onClick={handleClick}
         {...props}
       />
     )

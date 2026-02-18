@@ -1,12 +1,20 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import type { SkillData } from '@/lib/types'
 import { useSkillStore } from '@/lib/stores/skill-store'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { useNotify } from '@/components/ui/notify-provider'
 import { SkillFormAuthorTab } from '@/components/skill-form/author-tab'
 import { SkillFormEnhanceTab, type AiChangeSet, type AiLintPreview } from '@/components/skill-form/enhance-tab'
@@ -17,6 +25,7 @@ import { SkillFormTestsTab } from '@/components/skill-form/tests-tab'
 import { SkillFormTriggersTab } from '@/components/skill-form/triggers-tab'
 import { useSkillFormValidation } from '@/components/skill-form/use-skill-form-validation'
 import { toUserFriendlyErrorMessage } from '@/lib/friendly-validation'
+import { guardedFetch } from '@/lib/guarded-fetch'
 import { normalizeTagName, normalizeTagNames } from '@/lib/tag-normalize'
 import { AlertCircle } from 'lucide-react'
 
@@ -45,6 +54,7 @@ const DRAFT_CLIENT_ID_KEY = 'qsv:draft-client-id'
 const AUTOSAVE_DEBOUNCE_MS = 450
 const TAG_SEARCH_DEBOUNCE_MS = 300
 const TAG_SEARCH_THROTTLE_MS = 700
+const DRAFT_KEY_REGEX = /^[a-z0-9:_-]{1,120}$/i
 
 function randomDraftClientId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -64,6 +74,7 @@ function canRenderBinaryInWeb(mime: string): boolean {
 
 export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFormProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const notify = useNotify()
   const isEdit = !!skillId
   const isIndustrial = variant === 'industrial'
@@ -107,6 +118,9 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   const [fileMoving, setFileMoving] = useState(false)
   const [fileDeleting, setFileDeleting] = useState(false)
   const [pendingDeleteFilePath, setPendingDeleteFilePath] = useState<string | null>(null)
+  const [leaveDialogOpen, setLeaveDialogOpen] = useState(false)
+  const [leaveSaving, setLeaveSaving] = useState(false)
+  const [pendingLeaveHref, setPendingLeaveHref] = useState<string | null>(null)
   const [tagInput, setTagInput] = useState('')
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([])
   const [tagSuggestionsLoading, setTagSuggestionsLoading] = useState(false)
@@ -123,6 +137,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   const draftSaveQueuedRef = useRef(false)
   const serverDraftWarnedRef = useRef(false)
   const lastTagSearchAtRef = useRef(0)
+  const leaveBypassRef = useRef(false)
 
   // AI tab state (保持本地)
   const [aiInstruction, setAiInstruction] = useState('')
@@ -137,10 +152,11 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
   const ALLOWED_DIRS = ['references', 'examples', 'scripts', 'assets', 'templates']
   const draftMode = isEdit ? 'edit' : 'new'
   const draftEntityId = isEdit ? String(skillId || 0) : 'new'
-  const localDraftStorageKey = draftClientId
-    ? `${DRAFT_STORAGE_PREFIX}:${draftMode}:${draftEntityId}:${draftClientId}`
-    : null
-  const remoteDraftKey = draftClientId ? `${draftMode}:${draftEntityId}:${draftClientId}` : null
+  const draftKeyParamRaw = (searchParams.get('draftKey') || '').trim()
+  const forceFreshNew = !isEdit && searchParams.get('fresh') === '1'
+  const explicitDraftKey = draftKeyParamRaw && DRAFT_KEY_REGEX.test(draftKeyParamRaw) ? draftKeyParamRaw : null
+  const remoteDraftKey = explicitDraftKey || (draftClientId ? `${draftMode}:${draftEntityId}:${draftClientId}` : null)
+  const localDraftStorageKey = remoteDraftKey ? `${DRAFT_STORAGE_PREFIX}:${remoteDraftKey}` : null
 
   useEffect(() => {
     draftVersionRef.current = draftVersion
@@ -148,7 +164,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
 
   const loadFiles = useCallback(async () => {
     if (!skillId) return
-    const res = await fetch(`/api/skills/${skillId}/files`)
+    const res = await guardedFetch(`/api/skills/${skillId}/files`)
     if (res.ok) setFiles(await res.json())
   }, [skillId])
 
@@ -257,7 +273,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       draftSaveInFlightRef.current = true
       try {
         const expectedVersion = draftVersionRef.current
-        const res = await fetch(`/api/skill-drafts/${encodeURIComponent(remoteDraftKey)}`, {
+        const res = await guardedFetch(`/api/skill-drafts/${encodeURIComponent(remoteDraftKey)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -269,7 +285,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
         })
 
         if (res.status === 409) {
-          const latestRes = await fetch(`/api/skill-drafts/${encodeURIComponent(remoteDraftKey)}`)
+          const latestRes = await guardedFetch(`/api/skill-drafts/${encodeURIComponent(remoteDraftKey)}`)
           if (latestRes.ok) {
             const latest = (await latestRes.json().catch(() => ({}))) as RemoteDraftResponse
             const latestPayload = normalizeDraftPayload(latest.payload)
@@ -322,12 +338,59 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     if (restoredDraftRef.current || typeof window === 'undefined') return
     if (!draftClientId || !localDraftStorageKey || !remoteDraftKey) return
     if (isEdit && !initialData) return
+    if (!isEdit && forceFreshNew) {
+      restoredDraftRef.current = true
+      window.localStorage.removeItem(localDraftStorageKey)
+      window.localStorage.removeItem(LEGACY_NEW_DRAFT_STORAGE_KEY)
+      setDraftHydrated(true)
+      setDraftSource(null)
+      setDraftRestoredAt(null)
+      setDraftVersion(null)
+      draftVersionRef.current = null
+      router.replace('/skills/new')
+      return
+    }
 
     let cancelled = false
     restoredDraftRef.current = true
     const hydrate = async () => {
+      if (!isEdit && !explicitDraftKey) {
+        const applyLocalRaw = (raw: string | null): boolean => {
+          if (!raw) return false
+          try {
+            const parsed = JSON.parse(raw) as DraftEnvelope
+            const payload = normalizeDraftPayload(parsed?.data)
+            if (!payload || cancelled) return false
+            applyDraftPayload(payload)
+            setDraftRestoredAt(Date.now())
+            setDraftSource('local')
+            if (typeof parsed.version === 'number' && parsed.version > 0) {
+              setDraftVersion(parsed.version)
+              draftVersionRef.current = parsed.version
+            }
+            return true
+          } catch {
+            return false
+          }
+        }
+
+        const localRaw = window.localStorage.getItem(localDraftStorageKey)
+        const restoredFromLocal = applyLocalRaw(localRaw)
+        if (!restoredFromLocal && !isEdit) {
+          const legacyRaw = window.localStorage.getItem(LEGACY_NEW_DRAFT_STORAGE_KEY)
+          const restoredFromLegacy = applyLocalRaw(legacyRaw)
+          if (restoredFromLegacy) {
+            if (legacyRaw) window.localStorage.setItem(localDraftStorageKey, legacyRaw)
+            window.localStorage.removeItem(LEGACY_NEW_DRAFT_STORAGE_KEY)
+          }
+        }
+
+        setDraftHydrated(true)
+        return
+      }
+
       try {
-        const remoteRes = await fetch(`/api/skill-drafts/${encodeURIComponent(remoteDraftKey)}`, {
+        const remoteRes = await guardedFetch(`/api/skill-drafts/${encodeURIComponent(remoteDraftKey)}`, {
           cache: 'no-store',
         })
         if (remoteRes.ok) {
@@ -395,6 +458,9 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     localDraftStorageKey,
     remoteDraftKey,
     isEdit,
+    explicitDraftKey,
+    forceFreshNew,
+    router,
     initialData,
     applyDraftPayload,
   ])
@@ -404,18 +470,22 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
 
     const timer = window.setTimeout(() => {
       persistLocalDraft(true)
-      void persistServerDraft(true, true)
+      if (isEdit) {
+        void persistServerDraft(true, true)
+      }
     }, AUTOSAVE_DEBOUNCE_MS)
 
     return () => window.clearTimeout(timer)
-  }, [draftHydrated, persistLocalDraft, persistServerDraft])
+  }, [draftHydrated, persistLocalDraft, persistServerDraft, isEdit])
 
   useEffect(() => {
     if (!draftHydrated || typeof window === 'undefined') return
 
     const flushDraft = () => {
       persistLocalDraft(false)
-      void persistServerDraft(false, true)
+      if (isEdit) {
+        void persistServerDraft(false, true)
+      }
     }
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') flushDraft()
@@ -430,7 +500,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       window.removeEventListener('beforeunload', flushDraft)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [draftHydrated, persistLocalDraft, persistServerDraft])
+  }, [draftHydrated, persistLocalDraft, persistServerDraft, isEdit])
 
   const normalizedTagInput = normalizeTagName(tagInput)
 
@@ -457,7 +527,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
         params.set('query', normalizedTagInput)
         params.set('page', '1')
         params.set('limit', '50')
-        const res = await fetch(`/api/tags?${params}`, { signal: controller.signal })
+        const res = await guardedFetch(`/api/tags?${params}`, { signal: controller.signal })
         if (!res.ok) {
           if (!active) return
           setTagSuggestions([])
@@ -505,7 +575,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     setFileSaving(true)
     setUIField('error', '')
     try {
-      const res = await fetch(`/api/skills/${skillId}/files`, {
+      const res = await guardedFetch(`/api/skills/${skillId}/files`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: filePath, content: '', mime: guessMime(newFileName), isBinary: false }),
@@ -538,7 +608,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       return
     }
 
-    const res = await fetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(f.path)}`)
+    const res = await guardedFetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(f.path)}`)
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
       const msg = toUserFriendlyErrorMessage(data.error || `加载文件失败（${res.status}）`)
@@ -560,7 +630,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     setFileSaving(true)
     setUIField('error', '')
     try {
-      const res = await fetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(selectedFile.path)}`, {
+      const res = await guardedFetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(selectedFile.path)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: fileContent }),
@@ -593,7 +663,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     setUIField('error', '')
     setFileDeleting(true)
     try {
-      const res = await fetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(path)}`, { method: 'DELETE' })
+      const res = await guardedFetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(path)}`, { method: 'DELETE' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         const msg = toUserFriendlyErrorMessage(data.error || '删除文件失败')
@@ -636,7 +706,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
         const dataUrl = await readFileAsDataUrl(file)
         const base64 = dataUrl.split(',')[1] || ''
         const path = `assets/${file.name}`
-        const res = await fetch(`/api/skills/${skillId}/files`, {
+        const res = await guardedFetch(`/api/skills/${skillId}/files`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path, content: base64, mime: file.type || 'application/octet-stream', isBinary: true }),
@@ -674,7 +744,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     setFileMoving(true)
     setUIField('error', '')
     try {
-      const res = await fetch(`/api/skills/${skillId}/files`, {
+      const res = await guardedFetch(`/api/skills/${skillId}/files`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fromPath, toPath }),
@@ -703,7 +773,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
 
   async function loadAiCurrentFile(path: string): Promise<{ exists: boolean; isBinary: boolean; contentText: string | null }> {
     if (!skillId) return { exists: false, isBinary: false, contentText: null }
-    const res = await fetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(path)}`)
+    const res = await guardedFetch(`/api/skills/${skillId}/files?path=${encodeURIComponent(path)}`)
     if (res.status === 404) return { exists: false, isBinary: false, contentText: null }
     if (!res.ok) throw new Error(`LOAD_FILE_FAILED_${res.status}`)
     const data = await res.json().catch(() => ({}))
@@ -732,7 +802,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     }
     if (remoteDraftKey) {
       try {
-        await fetch(`/api/skill-drafts/${encodeURIComponent(remoteDraftKey)}`, { method: 'DELETE' })
+        await guardedFetch(`/api/skill-drafts/${encodeURIComponent(remoteDraftKey)}`, { method: 'DELETE' })
       } catch {
         // ignore cloud draft clear failures
       }
@@ -745,6 +815,45 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     if (showNotice) {
       notify.success('草稿已清空')
     }
+  }
+
+  function clearLocalDraftSnapshot() {
+    if (typeof window === 'undefined') return
+    if (localDraftStorageKey) {
+      window.localStorage.removeItem(localDraftStorageKey)
+    }
+    if (!isEdit) {
+      window.localStorage.removeItem(LEGACY_NEW_DRAFT_STORAGE_KEY)
+    }
+    setDraftSavedAt(null)
+  }
+
+  async function handleLeaveSaveAndGo() {
+    if (!pendingLeaveHref) return
+    setLeaveSaving(true)
+    try {
+      persistLocalDraft(true)
+      if (remoteDraftKey) {
+        await persistServerDraft(true, false)
+      }
+      notify.success('草稿已保存')
+      leaveBypassRef.current = true
+      router.push(pendingLeaveHref)
+    } finally {
+      setLeaveSaving(false)
+      setLeaveDialogOpen(false)
+      setPendingLeaveHref(null)
+    }
+  }
+
+  function handleLeaveDiscardAndGo() {
+    if (!pendingLeaveHref) return
+    clearLocalDraftSnapshot()
+    leaveBypassRef.current = true
+    setLeaveDialogOpen(false)
+    const next = pendingLeaveHref
+    setPendingLeaveHref(null)
+    router.push(next)
   }
 
   async function handleSave() {
@@ -762,7 +871,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
       const body = { title, summary, inputs, outputs, steps: steps.filter(Boolean), risks, triggers: triggers.filter(Boolean), guardrails: { ...guardrails, stop_conditions: guardrails.stop_conditions.filter(Boolean) }, tests: tests.filter((t) => t.name && t.input && t.expected_output), tags }
       const url = isEdit ? `/api/skills/${skillId}` : '/api/skills'
       const method = isEdit ? 'PUT' : 'POST'
-      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const res = await guardedFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         const msg = toUserFriendlyErrorMessage(data.error || '保存失败')
@@ -788,7 +897,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     setUIField('lintPassed', false)
     const body = { title, summary, inputs, outputs, steps: steps.filter(Boolean), risks, triggers: triggers.filter(Boolean), guardrails: { ...guardrails, stop_conditions: guardrails.stop_conditions.filter(Boolean) }, tests: tests.filter((t) => t.name && t.input && t.expected_output), tags }
     try {
-      const res = await fetch('/api/lint', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const res = await guardedFetch('/api/lint', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const data = await res.json()
       if (data.valid) {
         setUIField('lintPassed', true)
@@ -823,12 +932,87 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     !tags.includes(normalizedTagInput) &&
     !tagExactExists
 
+  const hasDraftContent = useMemo(() => {
+    if (title.trim()) return true
+    if (summary.trim()) return true
+    if (inputs.trim()) return true
+    if (outputs.trim()) return true
+    if (risks.trim()) return true
+    if (tags.length > 0) return true
+    if (steps.some((item) => item.trim().length > 0)) return true
+    if (triggers.some((item) => item.trim().length > 0)) return true
+    if (tests.some((item) => item.name.trim() || item.input.trim() || item.expected_output.trim())) return true
+    if (guardrails.allowed_tools.length > 0) return true
+    if (guardrails.stop_conditions.some((item) => item.trim().length > 0)) return true
+    if (guardrails.disable_model_invocation) return true
+    if (!guardrails.user_invocable) return true
+    if (guardrails.escalation !== 'ASK_HUMAN') return true
+    return false
+  }, [title, summary, inputs, outputs, risks, tags, steps, triggers, tests, guardrails])
+
+  const handleCancel = useCallback(() => {
+    if (isEdit) {
+      router.back()
+      return
+    }
+    if (!hasDraftContent) {
+      router.push('/skills')
+      return
+    }
+    setPendingLeaveHref('/skills')
+    setLeaveDialogOpen(true)
+  }, [isEdit, hasDraftContent, router])
+
+  useEffect(() => {
+    if (isEdit || !draftHydrated || typeof window === 'undefined') return
+
+    const onDocumentClick = (event: MouseEvent) => {
+      if (!hasDraftContent || leaveBypassRef.current) return
+      if (event.defaultPrevented) return
+      if (event.button !== 0) return
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const anchor = target.closest('a[href]') as HTMLAnchorElement | null
+      if (!anchor) return
+      if (anchor.hasAttribute('download')) return
+      if (anchor.target && anchor.target !== '_self') return
+
+      const href = anchor.getAttribute('href') || ''
+      if (!href || href.startsWith('#')) return
+
+      const nextUrl = new URL(anchor.href, window.location.href)
+      if (nextUrl.origin !== window.location.origin) return
+
+      const currentUrl = new URL(window.location.href)
+      if (
+        nextUrl.pathname === currentUrl.pathname &&
+        nextUrl.search === currentUrl.search &&
+        nextUrl.hash === currentUrl.hash
+      ) {
+        return
+      }
+
+      event.preventDefault()
+      setPendingLeaveHref(`${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`)
+      setLeaveDialogOpen(true)
+    }
+
+    document.addEventListener('click', onDocumentClick, true)
+    return () => {
+      document.removeEventListener('click', onDocumentClick, true)
+    }
+  }, [isEdit, draftHydrated, hasDraftContent])
+
   const draftTip = draftRestoredAt
     ? `已恢复${draftSource === 'server' ? '云端' : '本地'}草稿（${new Date(draftRestoredAt).toLocaleTimeString()}）`
     : draftHydrated
-      ? draftSource === 'server'
-        ? '已开启云端自动草稿（本地兜底）'
-        : '已开启本地自动草稿（云端同步中）'
+      ? isEdit
+        ? draftSource === 'server'
+          ? '已开启云端自动草稿（本地兜底）'
+          : '已开启本地自动草稿（云端同步中）'
+        : '已开启本地自动草稿（离开页面时可选择是否保存到草稿库）'
       : '正在检查草稿...'
   const draftSaveTimeLabel = draftSavedAt ? `最近保存 ${new Date(draftSavedAt).toLocaleTimeString()}` : ''
   const aiCurrentSkill = useMemo(
@@ -870,7 +1054,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     setAiApplied(false)
     setAiPreviewFile(null)
     try {
-      const res = await fetch(`/api/skills/${skillId}/ai/propose`, {
+      const res = await guardedFetch(`/api/skills/${skillId}/ai/propose`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, instruction: aiInstruction || undefined }),
@@ -903,7 +1087,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
     setAiApplying(true)
     setAiError('')
     try {
-      const res = await fetch(`/api/skills/${skillId}/ai/apply`, {
+      const res = await guardedFetch(`/api/skills/${skillId}/ai/apply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ changeSet: aiChangeSet }),
@@ -970,6 +1154,52 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
         loading={fileDeleting}
         onConfirm={() => void confirmDeleteFile()}
       />
+      <Dialog
+        open={leaveDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setLeaveDialogOpen(false)
+            setPendingLeaveHref(null)
+          }
+        }}
+      >
+        <DialogContent className={`${roundedLgClass} max-w-md`}>
+          <DialogHeader>
+            <DialogTitle>离开当前新建页面</DialogTitle>
+            <DialogDescription>
+              当前内容有未提交变更。是否保存为草稿后再离开？
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setLeaveDialogOpen(false)
+                setPendingLeaveHref(null)
+              }}
+              disabled={leaveSaving}
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleLeaveDiscardAndGo}
+              disabled={leaveSaving}
+            >
+              不保存离开
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleLeaveSaveAndGo()}
+              disabled={leaveSaving}
+            >
+              {leaveSaving ? '保存中...' : '保存并离开'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <div className="flex-1">
       <div
         className={isIndustrial ? '-mx-5 sticky top-0 z-20 mb-5 px-5 pb-3 pt-4' : 'mb-5'}
@@ -1263,7 +1493,7 @@ export function SkillForm({ initialData, skillId, variant = 'default' }: SkillFo
             {saving ? '保存中...' : isEdit ? '更新 Skill' : '创建 Skill'}
           </Button>
           <Button
-            onClick={() => router.back()}
+            onClick={handleCancel}
             type="button"
             variant="outline"
             className={`${roundedLgClass} px-6`}

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { X, Send, RotateCcw, Square, MessageSquarePlus } from 'lucide-react'
 import { useChatPanel } from '@/lib/chat/chat-context'
 import { useChat } from '@/lib/chat/use-chat'
+import { isSkillToolCallData } from '@/lib/chat/types'
 import { ChatMessage, StreamingMessage } from './chat-message'
 import { ChatSkillPreview } from './chat-skill-preview'
 import { Button } from '@/components/ui/button'
@@ -179,7 +180,7 @@ export function ChatPanel() {
           {messages.map((msg) => (
             <div key={msg.id} className="space-y-3">
               {msg.content && <ChatMessage message={msg} />}
-              {msg.toolCall && (
+              {isSkillToolCallData(msg.toolCall) && (
                 <ChatSkillPreview
                   toolCall={msg.toolCall}
                   onConfirm={createSkill}

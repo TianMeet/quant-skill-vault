@@ -1,10 +1,13 @@
 'use client'
 
 import { useState, useCallback, useRef } from 'react'
-import type { ChatMessage, ToolCallData, SkillDraft, SSEEvent } from './types'
+import { isSkillToolCallData, type ChatMessage, type ToolCallData, type SkillDraft, type SSEEvent } from './types'
+import { guardedFetch } from '@/lib/guarded-fetch'
 
 let msgCounter = 0
 const genId = () => `msg_${Date.now()}_${++msgCounter}`
+const SEND_THROTTLE_MS = 480
+const CREATE_THROTTLE_MS = 650
 
 interface UseChatOptions {
   onDraftUpdate?: (draft: SkillDraft) => void
@@ -16,15 +19,23 @@ export function useChat(options?: UseChatOptions) {
   const [streamingText, setStreamingText] = useState('')
   const [pendingToolCall, setPendingToolCall] = useState<ToolCallData | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const isStreamingRef = useRef(false)
+  const lastSendAtRef = useRef(0)
+  const createInFlightRef = useRef(false)
+  const lastCreateAtRef = useRef(0)
   const onDraftUpdateRef = useRef(options?.onDraftUpdate)
   onDraftUpdateRef.current = options?.onDraftUpdate
 
   const sendMessage = useCallback(
     async (content: string) => {
-      if (isStreaming) return
+      const now = Date.now()
+      if (isStreamingRef.current) return
+      if (now - lastSendAtRef.current < SEND_THROTTLE_MS) return
+      lastSendAtRef.current = now
 
       const userMsg: ChatMessage = { id: genId(), role: 'user', content }
       setMessages((prev) => [...prev, userMsg])
+      isStreamingRef.current = true
       setIsStreaming(true)
       setStreamingText('')
       setPendingToolCall(null)
@@ -36,7 +47,7 @@ export function useChat(options?: UseChatOptions) {
       abortRef.current = controller
 
       try {
-        const res = await fetch('/api/chat', {
+        const res = await guardedFetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ messages: apiMessages }),
@@ -115,16 +126,22 @@ export function useChat(options?: UseChatOptions) {
           setMessages((prev) => [...prev, errorMsg])
         }
       } finally {
+        isStreamingRef.current = false
         setIsStreaming(false)
         abortRef.current = null
       }
     },
-    [messages, isStreaming],
+    [messages],
   )
 
   /** 确认创建 Skill，POST /api/skills */
   const createSkill = useCallback(async () => {
-    if (!pendingToolCall) return null
+    if (!isSkillToolCallData(pendingToolCall)) return null
+    const now = Date.now()
+    if (createInFlightRef.current) return null
+    if (now - lastCreateAtRef.current < CREATE_THROTTLE_MS) return null
+    lastCreateAtRef.current = now
+    createInFlightRef.current = true
 
     const input = pendingToolCall.input
     const body = {
@@ -146,51 +163,59 @@ export function useChat(options?: UseChatOptions) {
       tags: input.tags || [],
     }
 
-    const res = await fetch('/api/skills', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
+    try {
+      const res = await guardedFetch('/api/skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      const details =
-        err && typeof err === 'object' && 'details' in err && Array.isArray((err as { details?: unknown }).details)
-          ? (err as { details: Array<{ message?: string }> }).details
-              .map((d) => (d && typeof d.message === 'string' ? d.message : ''))
-              .filter(Boolean)
-              .slice(0, 2)
-              .join('; ')
-          : ''
-      const base = (err && typeof err === 'object' && 'error' in err && typeof (err as { error?: unknown }).error === 'string')
-        ? (err as { error: string }).error
-        : 'Failed to create skill'
-      throw new Error(details ? `${base}: ${details}` : base)
-    }
-
-    const skill = await res.json()
-
-    // 更新最后一条消息的 toolResult
-    setMessages((prev) => {
-      const updated = [...prev]
-      const last = updated[updated.length - 1]
-      if (last?.toolCall) {
-        updated[updated.length - 1] = {
-          ...last,
-          toolResult: { success: true, skillId: skill.id },
-        }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        const details =
+          err && typeof err === 'object' && 'details' in err && Array.isArray((err as { details?: unknown }).details)
+            ? (err as { details: Array<{ message?: string }> }).details
+                .map((d) => (d && typeof d.message === 'string' ? d.message : ''))
+                .filter(Boolean)
+                .slice(0, 2)
+                .join('; ')
+            : ''
+        const base = (err && typeof err === 'object' && 'error' in err && typeof (err as { error?: unknown }).error === 'string')
+          ? (err as { error: string }).error
+          : 'Failed to create skill'
+        throw new Error(details ? `${base}: ${details}` : base)
       }
-      return updated
-    })
-    setPendingToolCall(null)
 
-    return skill
+      const skill = await res.json()
+
+      // 更新最后一条消息的 toolResult
+      setMessages((prev) => {
+        const updated = [...prev]
+        const last = updated[updated.length - 1]
+        if (last?.toolCall) {
+          updated[updated.length - 1] = {
+            ...last,
+            toolResult: { success: true, skillId: skill.id },
+          }
+        }
+        return updated
+      })
+      setPendingToolCall(null)
+
+      return skill
+    } finally {
+      createInFlightRef.current = false
+    }
   }, [pendingToolCall])
 
   /** 用户在预览后要求修改，继续对话 */
   const sendRevision = useCallback(
     async (feedback: string) => {
       if (!pendingToolCall) return
+      const now = Date.now()
+      if (isStreamingRef.current) return
+      if (now - lastSendAtRef.current < SEND_THROTTLE_MS) return
+      lastSendAtRef.current = now
 
       // 构造 tool_result 消息，然后继续对话
       const toolResultMsg: ChatMessage = {
@@ -202,6 +227,7 @@ export function useChat(options?: UseChatOptions) {
 
       setPendingToolCall(null)
       setMessages((prev) => [...prev, toolResultMsg])
+      isStreamingRef.current = true
       setIsStreaming(true)
       setStreamingText('')
 
@@ -226,7 +252,7 @@ export function useChat(options?: UseChatOptions) {
       abortRef.current = controller
 
       try {
-        const res = await fetch('/api/chat', {
+        const res = await guardedFetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ messages: apiMessages }),
@@ -294,6 +320,7 @@ export function useChat(options?: UseChatOptions) {
           ])
         }
       } finally {
+        isStreamingRef.current = false
         setIsStreaming(false)
         abortRef.current = null
       }
@@ -302,10 +329,12 @@ export function useChat(options?: UseChatOptions) {
   )
 
   const stopStreaming = useCallback(() => {
+    isStreamingRef.current = false
     abortRef.current?.abort()
   }, [])
 
   const reset = useCallback(() => {
+    isStreamingRef.current = false
     abortRef.current?.abort()
     setMessages([])
     setStreamingText('')

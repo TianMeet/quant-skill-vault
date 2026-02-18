@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { SkillForm } from '@/components/skill-form'
 import type { SkillData } from '@/lib/types'
 import { toUserFriendlyErrorMessage } from '@/lib/friendly-validation'
+import { guardedFetch } from '@/lib/guarded-fetch'
 
 export default function EditSkillPage() {
   const params = useParams()
@@ -16,7 +17,7 @@ export default function EditSkillPage() {
     async function load() {
       setLoadError('')
       try {
-        const res = await fetch(`/api/skills/${params.id}`)
+        const res = await guardedFetch(`/api/skills/${params.id}`)
         if (res.ok) {
           const data = await res.json()
           setSkill(data)

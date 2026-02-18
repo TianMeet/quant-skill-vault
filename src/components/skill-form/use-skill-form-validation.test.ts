@@ -1,4 +1,5 @@
 import type { SkillGuardrails, SkillTestCase } from '@/lib/types'
+import { describe, expect, it } from 'vitest'
 import { buildSkillFormValidationModel } from '@/components/skill-form/use-skill-form-validation'
 
 function makeGuardrails(overrides: Partial<SkillGuardrails> = {}): SkillGuardrails {

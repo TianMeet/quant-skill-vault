@@ -19,6 +19,7 @@ import { useNotify } from '@/components/ui/notify-provider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TagPill } from '@/components/tag-pill'
 import { toUserFriendlyErrorMessage } from '@/lib/friendly-validation'
+import { guardedFetch } from '@/lib/guarded-fetch'
 
 interface TagItem {
   id: number
@@ -86,7 +87,7 @@ export default function TagsPage() {
       params.set('query', query)
       params.set('page', String(page))
       params.set('limit', String(limit))
-      const res = await fetch(`/api/tags?${params}`, { signal })
+      const res = await guardedFetch(`/api/tags?${params}`, { signal }, { throttleMs: 0 })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         if (!hasFetchedOnceRef.current) {
@@ -156,7 +157,7 @@ export default function TagsPage() {
   async function loadLinkedSkills(tagId: number) {
     setLoadingSkillsTagId(tagId)
     try {
-      const res = await fetch(`/api/tags/${tagId}/skills`)
+      const res = await guardedFetch(`/api/tags/${tagId}/skills`)
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         notify.error(toUserFriendlyErrorMessage(data.error || `加载关联技能失败（${res.status}）`))
@@ -175,7 +176,7 @@ export default function TagsPage() {
   async function handleRename(tagId: number) {
     setBusyTagId(tagId)
     try {
-      const res = await fetch(`/api/tags/${tagId}`, {
+      const res = await guardedFetch(`/api/tags/${tagId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: editingName }),
@@ -207,7 +208,7 @@ export default function TagsPage() {
     const tag = pendingDeleteTag
     setBusyTagId(tag.id)
     try {
-      const res = await fetch(`/api/tags/${tag.id}`, { method: 'DELETE' })
+      const res = await guardedFetch(`/api/tags/${tag.id}`, { method: 'DELETE' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         const msg = toUserFriendlyErrorMessage(data.error || `删除失败（${res.status}）`)
@@ -234,7 +235,7 @@ export default function TagsPage() {
     }
     setBusyTagId(sourceTagId)
     try {
-      const res = await fetch('/api/tags/merge', {
+      const res = await guardedFetch('/api/tags/merge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sourceTagId, targetTagId: Number(mergeTargetId) }),

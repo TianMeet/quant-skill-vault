@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 type NotifyType = 'success' | 'error' | 'info'
 
@@ -103,14 +104,16 @@ export function NotifyProvider({ children }: { children: React.ReactNode }) {
               <div className="flex items-center gap-2">
                 {style.icon}
                 <p className="flex-1 text-sm leading-5">{item.message}</p>
-                <button
+                <Button
                   type="button"
-                  className="rounded p-0.5 opacity-60 hover:opacity-100"
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5 rounded p-0.5 opacity-60 hover:opacity-100"
                   onClick={() => remove(item.id)}
                   aria-label="关闭提示"
                 >
                   <X className="h-3.5 w-3.5" />
-                </button>
+                </Button>
               </div>
             </div>
           )
